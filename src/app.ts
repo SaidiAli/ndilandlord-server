@@ -1,0 +1,76 @@
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import dotenv from 'dotenv';
+import { errorHandler } from './middleware/errorHandler';
+import { notFound } from './middleware/notFound';
+import authRoutes from './routes/auth';
+import userRoutes from './routes/users';
+import propertyRoutes from './routes/properties';
+import unitRoutes from './routes/units';
+import leaseRoutes from './routes/leases';
+import paymentRoutes from './routes/payments';
+// import maintenanceRoutes from './routes/maintenance';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 4000;
+
+// Middleware
+app.use(helmet());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:4000',
+  credentials: true,
+}));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Health check
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
+// Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  const { method, url, ip } = req;
+
+  // Log the incoming request
+  console.log(`[${new Date().toISOString()}] ${method} ${url} from ${ip}`);
+
+  const originalSend = res.send;
+
+  // Override the send function to log the response
+  res.send = function (body) {
+    const duration = Date.now() - start;
+    console.log(`[${new Date().toISOString()}] ${method} ${url} - ${res.statusCode} (${duration}ms)`);
+    return originalSend.call(this, body);
+  };
+
+  next();
+});
+
+// API Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/properties', propertyRoutes);
+app.use('/api/units', unitRoutes);
+app.use('/api/leases', leaseRoutes);
+app.use('/api/payments', paymentRoutes);
+// app.use('/api/maintenance', maintenanceRoutes);
+
+// Error handling middleware
+app.use(notFound);
+app.use(errorHandler);
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📊 Health check: http://localhost:${PORT}/health`);
+});
+
+export default app;
