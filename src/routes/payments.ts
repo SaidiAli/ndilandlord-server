@@ -90,6 +90,124 @@ router.get('/lease/:leaseId/history', authenticate, async (req: AuthenticatedReq
   }
 });
 
+// Get payment analytics
+router.get('/analytics', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const user = req.user!;
+
+    // Get all payments based on user role
+    const filters: any = {};
+    if (user.role === 'tenant') {
+      // TODO: Add tenant filtering when we implement lease-tenant relationships
+    }
+
+    const payments = await PaymentService.getAllPayments(filters);
+    
+    // Filter by date range if provided
+    let filteredPayments = payments;
+    if (startDate && endDate) {
+      const start = new Date(startDate as string);
+      const end = new Date(endDate as string);
+      filteredPayments = payments.filter(p => {
+        const paymentDate = new Date(p.payment.createdAt);
+        return paymentDate >= start && paymentDate <= end;
+      });
+    }
+
+    // Calculate analytics
+    const totalPayments = filteredPayments.length;
+    const totalAmount = filteredPayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0);
+    
+    // Calculate average payment processing time (for completed payments)
+    const completedPayments = filteredPayments.filter(p => p.payment.status === 'completed' && p.payment.paidDate);
+    const averagePaymentTime = completedPayments.length > 0 
+      ? completedPayments.reduce((sum, p) => {
+          const created = new Date(p.payment.createdAt).getTime();
+          const paid = new Date(p.payment.paidDate!).getTime();
+          return sum + (paid - created);
+        }, 0) / completedPayments.length / (1000 * 60) // Convert to minutes
+      : 0;
+
+    // Group by status
+    const paymentsByStatus = Object.entries(
+      filteredPayments.reduce((acc, p) => {
+        const status = p.payment.status;
+        if (!acc[status]) {
+          acc[status] = { count: 0, amount: 0 };
+        }
+        acc[status].count += 1;
+        acc[status].amount += parseFloat(p.payment.amount);
+        return acc;
+      }, {} as Record<string, { count: number; amount: number }>)
+    ).map(([status, data]) => ({
+      status,
+      count: data.count,
+      amount: data.amount,
+    }));
+
+    // Group by mobile money provider
+    const paymentsByProvider = Object.entries(
+      filteredPayments
+        .filter(p => p.payment.mobileMoneyProvider)
+        .reduce((acc, p) => {
+          const provider = p.payment.mobileMoneyProvider!;
+          if (!acc[provider]) {
+            acc[provider] = { count: 0, amount: 0 };
+          }
+          acc[provider].count += 1;
+          acc[provider].amount += parseFloat(p.payment.amount);
+          return acc;
+        }, {} as Record<string, { count: number; amount: number }>)
+    ).map(([provider, data]) => ({
+      provider,
+      count: data.count,
+      amount: data.amount,
+    }));
+
+    // Monthly trends (last 12 months)
+    const now = new Date();
+    const monthlyTrends = [];
+    for (let i = 11; i >= 0; i--) {
+      const month = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
+      const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+      
+      const monthPayments = filteredPayments.filter(p => {
+        const paymentDate = new Date(p.payment.createdAt);
+        return paymentDate >= monthStart && paymentDate <= monthEnd;
+      });
+
+      monthlyTrends.push({
+        month: month.toISOString().substring(0, 7), // YYYY-MM format
+        totalPayments: monthPayments.length,
+        totalAmount: monthPayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0),
+      });
+    }
+
+    const analytics = {
+      totalPayments,
+      totalAmount,
+      averagePaymentTime,
+      paymentsByStatus,
+      paymentsByProvider,
+      monthlyTrends,
+    };
+
+    res.json({
+      success: true,
+      data: analytics,
+      message: 'Payment analytics retrieved successfully',
+    });
+  } catch (error) {
+    console.error('Error fetching payment analytics:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch payment analytics',
+    });
+  }
+});
+
 // Get payment by ID
 router.get('/:id', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {

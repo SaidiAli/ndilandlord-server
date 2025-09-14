@@ -157,13 +157,14 @@ export class PaymentService {
   }
 
   /**
-   * Get payment history for a lease
+   * Get payment history for a lease with detailed information
    */
   static async getPaymentHistory(leaseId: string) {
     try {
       const paymentHistory = await db
         .select({
-          id: payments.id,
+          // Payment data
+          paymentId: payments.id,
           amount: payments.amount,
           status: payments.status,
           paymentMethod: payments.paymentMethod,
@@ -171,13 +172,64 @@ export class PaymentService {
           paidDate: payments.paidDate,
           dueDate: payments.dueDate,
           notes: payments.notes,
-          createdAt: payments.createdAt,
+          paymentCreatedAt: payments.createdAt,
+          paymentUpdatedAt: payments.updatedAt,
+          // Lease data
+          leaseId: leases.id,
+          leaseStartDate: leases.startDate,
+          leaseEndDate: leases.endDate,
+          monthlyRent: leases.monthlyRent,
+          deposit: leases.deposit,
+          leaseStatus: leases.status,
+          // Tenant data
+          tenantId: users.id,
+          tenantFirstName: users.firstName,
+          tenantLastName: users.lastName,
+          tenantEmail: users.email,
+          tenantPhone: users.phone,
         })
         .from(payments)
+        .leftJoin(leases, eq(payments.leaseId, leases.id))
+        .leftJoin(users, eq(leases.tenantId, users.id))
         .where(eq(payments.leaseId, leaseId))
         .orderBy(desc(payments.createdAt));
 
-      return paymentHistory;
+      // Transform to match mobile app expectations (PaymentWithDetails[])
+      return paymentHistory.map((row) => ({
+        payment: {
+          id: row.paymentId,
+          leaseId: row.leaseId,
+          amount: row.amount,
+          dueDate: row.dueDate,
+          paidDate: row.paidDate,
+          status: row.status as 'pending' | 'processing' | 'completed' | 'failed' | 'refunded',
+          paymentMethod: row.paymentMethod,
+          transactionId: row.transactionId,
+          notes: row.notes,
+          createdAt: row.paymentCreatedAt,
+          updatedAt: row.paymentUpdatedAt,
+        },
+        lease: {
+          id: row.leaseId,
+          unitId: '', // We'd need to join with units table if needed
+          tenantId: row.tenantId,
+          startDate: row.leaseStartDate,
+          endDate: row.leaseEndDate,
+          monthlyRent: parseFloat(row.monthlyRent),
+          deposit: parseFloat(row.deposit),
+          status: row.leaseStatus as 'draft' | 'active' | 'expired' | 'terminated',
+          terms: null,
+          createdAt: '', // Would need from leases table
+          updatedAt: '', // Would need from leases table
+        },
+        tenant: {
+          id: row.tenantId,
+          firstName: row.tenantFirstName,
+          lastName: row.tenantLastName,
+          email: row.tenantEmail || '',
+          phone: row.tenantPhone || '',
+        },
+      }));
     } catch (error) {
       console.error('Error fetching payment history:', error);
       throw new Error('Failed to fetch payment history');
