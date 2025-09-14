@@ -1,0 +1,395 @@
+## IoTec 
+ioTec is a financial services platform that allows businesses to "make and receive payments, ensure the authenticity of your customers with robust identity verification, effortlessly perform credit checks and submit credit reports to CRBs while staying in constant communication with your customers."
+
+## Summary of the API
+
+Overview
+The ioTec Pay API enables seamless integration between your systems and ioTec Pay services. With it, you can:
+
+Collect Payments: Receive mobile money payments directly into your ioTec Pay wallet.
+Make Disbursements: Send funds from your wallet to mobile money accounts or commercial bank accounts.
+Manage Transactions: Access and work with transaction data to streamline your financial operations.
+
+Getting started
+To begin using the ioTec Pay API, you'll need to authenticate via OAuth 2.0 client credentials flow.
+
+Where to Get Your API Credentials
+When you sign up for ioTec Pay, your client_id and client_secret are automatically sent to the email address you used during registration.
+
+Once you have your credentials, you can request an access token with the curl request below:
+
+`curl --request POST \
+  --url https://id.iotec.io/connect/token \
+  --header 'Content-Type: application/x-www-form-urlencoded' \
+  --data client_id=[client_id] \
+  --data client_secret=[client_secret] \
+  --data grant_type=client_credentials`
+
+  The authorization server will then return an access token in the following format:
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+  "expires_in": 300,
+  "token_type": "Bearer",
+  "scope": "profile email"
+}
+```
+
+Use the returned access token in the Authorization header of all your API requests as follows:
+
+`curl --request POST \
+  --url https://pay.iotec.io/api/disbursements/disburse \
+  --header 'Authorization: Bearer [access_token]' \
+  --header 'Content-Type: application/json' \
+  --data '{
+  "category": "MobileMoney",
+  "currency": "ITX",
+  "walletId": "5e83b187-801e-410e-b76e-f491928547e0",
+  "externalId": "001",
+  "payee": "0111777771",
+  "amount": 1000,
+  "payerNote": "payerNote",
+  "payeeNote": "payeeNote"
+}'`
+
+
+### Initiate Mobile Money Collection
+This endpoint is used to perform a mobile money collection request from a specified payer to your ioTec Pay wallet.
+
+The transaction flow works as follows:
+
+A collection request is initiated
+The payer receives a prompt on their mobile device
+The transaction remains in Pending status until:
+The payer authorizes the payment (status changes to Success)
+The payer declines the payment (status changes to Failed)
+The system times out the request (status changes to Failed)
+You can check the transaction status using:
+
+`GET api/collections/status/{transactionId}`
+
+Request:
+```javascript
+fetch('https://pay.iotec.io/api/collections/collect', {
+  method: 'POST',
+  headers: {
+    Authorization: 'Bearer <jwt-token>',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    category: 'MobileMoney',
+    currency: 'ITX',
+    walletId: '5e83b187-801e-410e-b76e-f491928547e0',
+    externalId: '001',
+    payer: '0111777771',
+    payerNote: 'Payment for Invoice #12345',
+    amount: 700,
+    payeeNote: 'Customer ID: 78923, Order #: ABC123',
+    channel: null,
+    transactionChargesCategory: 'ChargeWallet'
+  })
+})
+```
+
+Response: 200
+
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "createdAt": "2025-09-14T07:57:49.147Z",
+  "category": "MobileMoney",
+  "status": "Pending",
+  "paymentChannel": "Api",
+  "statusCode": "pending",
+  "statusMessage": "Request is being processed",
+  "externalId": "001",
+  "amount": 700,
+  "payerNote": "Payment for Invoice #12345",
+  "payeeNote": "Customer ID: 78923, Order #: ABC123",
+  "currency": "ITX",
+  "wallet": {
+    "id": null,
+    "name": null
+  },
+  "chargeModel": null,
+  "createdBy": "2d629907-d515-4943-84b7-da337292bdba",
+  "transactionCharge": 14,
+  "vendorCharge": 10.5,
+  "totalTransactionCharge": 24.5,
+  "vendor": "Mock",
+  "vendorTransactionId": null,
+  "lastUpdated": null,
+  "processedAt": null,
+  "transactions": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "createdAt": "2025-09-14T07:57:49.147Z",
+      "operation": "TopUp",
+      "wallet": {
+        "id": null,
+        "name": null
+      },
+      "walletId": "123e4567-e89b-12d3-a456-426614174000",
+      "requestId": "123e4567-e89b-12d3-a456-426614174000",
+      "requestCategory": "Disbursement",
+      "transactionNumber": 1,
+      "amount": 1,
+      "memo": null,
+      "narration": null,
+      "balance": 1,
+      "previousBalance": 1,
+      "rollback": true,
+      "category": "Disbursement",
+      "disbursement": {
+        "id": "123e4567-e89b-12d3-a456-426614174000",
+        "createdAt": "2025-09-14T07:57:49.147Z",
+        "lastUpdated": null,
+        "isDeleted": true,
+        "status": "Pending",
+        "vendor": "Mock",
+        "amount": 1,
+        "msisdn": null,
+        "vendorTransactionId": null,
+        "transactionCharge": 1,
+        "vendorCharge": 1
+      },
+      "collection": {
+        "id": "123e4567-e89b-12d3-a456-426614174000",
+        "createdAt": "2025-09-14T07:57:49.147Z",
+        "lastUpdated": null,
+        "isDeleted": true,
+        "status": "Pending",
+        "vendor": "Mock",
+        "amount": 1,
+        "msisdn": null,
+        "vendorTransactionId": null,
+        "transactionCharge": 1,
+        "vendorCharge": 1
+      }
+    }
+  ],
+  "payer": "0111777771",
+  "payerName": "John Doe"
+}
+```
+Response: 400
+```json
+{
+  "message": "Invalid ioTec wallet",
+  "code": "BadRequest"
+}
+```
+
+
+### Get transaction status
+This endpoint is used to get the details of a collection transaction including the status.
+
+Path Parameters
+requestId
+Type:BankTransferType
+Format:uuid
+required
+The unique identifier of the transaction you want to check. This is the id field from the response body returned when you initiated the collection.
+
+Headers
+Authorization
+Type:BankTransferType
+required
+Example
+OAuth2 bearer token, got from id.iotec.io
+
+Request:
+```javascript
+fetch('https://pay.iotec.io/api/collections/status/', {
+  headers: {
+    Authorization: 'Bearer <jwt-token>'
+  }
+})
+```
+
+Response: 200
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "createdAt": "2025-09-14T07:57:49.147Z",
+  "category": "MobileMoney",
+  "status": "Pending",
+  "paymentChannel": "Api",
+  "statusCode": "pending",
+  "statusMessage": "Request is being processed",
+  "externalId": "001",
+  "amount": 700,
+  "payerNote": "Payment for Invoice #12345",
+  "payeeNote": "Customer ID: 78923, Order #: ABC123",
+  "currency": "ITX",
+  "wallet": {
+    "id": null,
+    "name": null
+  },
+  "chargeModel": null,
+  "createdBy": "2d629907-d515-4943-84b7-da337292bdba",
+  "transactionCharge": 14,
+  "vendorCharge": 10.5,
+  "totalTransactionCharge": 24.5,
+  "vendor": "Mock",
+  "vendorTransactionId": null,
+  "lastUpdated": null,
+  "processedAt": null,
+  "transactions": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "createdAt": "2025-09-14T07:57:49.147Z",
+      "operation": "TopUp",
+      "wallet": {
+        "id": null,
+        "name": null
+      },
+      "walletId": "123e4567-e89b-12d3-a456-426614174000",
+      "requestId": "123e4567-e89b-12d3-a456-426614174000",
+      "requestCategory": "Disbursement",
+      "transactionNumber": 1,
+      "amount": 1,
+      "memo": null,
+      "narration": null,
+      "balance": 1,
+      "previousBalance": 1,
+      "rollback": true,
+      "category": "Disbursement",
+      "disbursement": {
+        "id": "123e4567-e89b-12d3-a456-426614174000",
+        "createdAt": "2025-09-14T07:57:49.147Z",
+        "lastUpdated": null,
+        "isDeleted": true,
+        "status": "Pending",
+        "vendor": "Mock",
+        "amount": 1,
+        "msisdn": null,
+        "vendorTransactionId": null,
+        "transactionCharge": 1,
+        "vendorCharge": 1
+      },
+      "collection": {
+        "id": "123e4567-e89b-12d3-a456-426614174000",
+        "createdAt": "2025-09-14T07:57:49.147Z",
+        "lastUpdated": null,
+        "isDeleted": true,
+        "status": "Pending",
+        "vendor": "Mock",
+        "amount": 1,
+        "msisdn": null,
+        "vendorTransactionId": null,
+        "transactionCharge": 1,
+        "vendorCharge": 1
+      }
+    }
+  ],
+  "payer": "0111777771",
+  "payerName": "John Doe"
+}
+```
+
+### Get transaction status by externalId
+This endpoint is used to get the details of a collection transaction including the status with the use of your own reference ID (externalId).
+
+Path Parameters
+externalId
+Type:BankTransferType
+required
+Your custom unique identifier/reference for the transaction. This is the value you provided in the externalId field when initiating the collection.
+
+Headers
+Authorization
+Type:BankTransferType
+required
+Example
+OAuth2 bearer token, got from id.iotec.io
+
+Request:
+```
+fetch('https://pay.iotec.io/api/collections/external-id/', {
+  headers: {
+    Authorization: 'Bearer <jwt-token>'
+  }
+})
+```
+
+Response: 200
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "createdAt": "2025-09-14T07:57:49.147Z",
+  "category": "MobileMoney",
+  "status": "Pending",
+  "paymentChannel": "Api",
+  "statusCode": "pending",
+  "statusMessage": "Request is being processed",
+  "externalId": "001",
+  "amount": 700,
+  "payerNote": "Payment for Invoice #12345",
+  "payeeNote": "Customer ID: 78923, Order #: ABC123",
+  "currency": "ITX",
+  "wallet": {
+    "id": null,
+    "name": null
+  },
+  "chargeModel": null,
+  "createdBy": "2d629907-d515-4943-84b7-da337292bdba",
+  "transactionCharge": 14,
+  "vendorCharge": 10.5,
+  "totalTransactionCharge": 24.5,
+  "vendor": "Mock",
+  "vendorTransactionId": null,
+  "lastUpdated": null,
+  "processedAt": null,
+  "transactions": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "createdAt": "2025-09-14T07:57:49.147Z",
+      "operation": "TopUp",
+      "wallet": {
+        "id": null,
+        "name": null
+      },
+      "walletId": "123e4567-e89b-12d3-a456-426614174000",
+      "requestId": "123e4567-e89b-12d3-a456-426614174000",
+      "requestCategory": "Disbursement",
+      "transactionNumber": 1,
+      "amount": 1,
+      "memo": null,
+      "narration": null,
+      "balance": 1,
+      "previousBalance": 1,
+      "rollback": true,
+      "category": "Disbursement",
+      "disbursement": {
+        "id": "123e4567-e89b-12d3-a456-426614174000",
+        "createdAt": "2025-09-14T07:57:49.147Z",
+        "lastUpdated": null,
+        "isDeleted": true,
+        "status": "Pending",
+        "vendor": "Mock",
+        "amount": 1,
+        "msisdn": null,
+        "vendorTransactionId": null,
+        "transactionCharge": 1,
+        "vendorCharge": 1
+      },
+      "collection": {
+        "id": "123e4567-e89b-12d3-a456-426614174000",
+        "createdAt": "2025-09-14T07:57:49.147Z",
+        "lastUpdated": null,
+        "isDeleted": true,
+        "status": "Pending",
+        "vendor": "Mock",
+        "amount": 1,
+        "msisdn": null,
+        "vendorTransactionId": null,
+        "transactionCharge": 1,
+        "vendorCharge": 1
+      }
+    }
+  ],
+  "payer": "0111777771",
+  "payerName": "John Doe"
+}
+```
