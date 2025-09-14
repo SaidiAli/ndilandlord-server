@@ -6,7 +6,7 @@ export const validateBody = (schema: ZodSchema) => {
   return (req: Request, res: Response<ApiResponse>, next: NextFunction) => {
     try {
       req.body = schema.parse(req.body);
-      next();
+      return next();
     } catch (error) {
       if (error instanceof ZodError) {
         return res.status(400).json({
@@ -24,7 +24,7 @@ export const validateQuery = (schema: ZodSchema) => {
   return (req: Request, res: Response<ApiResponse>, next: NextFunction) => {
     try {
       req.query = schema.parse(req.query);
-      next();
+      return next();
     } catch (error) {
       if (error instanceof ZodError) {
         return res.status(400).json({
@@ -42,7 +42,7 @@ export const validateParams = (schema: ZodSchema) => {
   return (req: Request, res: Response<ApiResponse>, next: NextFunction) => {
     try {
       req.params = schema.parse(req.params);
-      next();
+      return next();
     } catch (error) {
       if (error instanceof ZodError) {
         return res.status(400).json({

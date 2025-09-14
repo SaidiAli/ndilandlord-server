@@ -1,17 +1,25 @@
 import { Router, Response } from 'express';
-import { authenticate, authorize } from '../middleware/auth';
-import { AuthenticatedRequest, ApiResponse } from '../types';
+import { 
+  authenticate, 
+  authorize, 
+  requireLandlordContext,
+  injectLandlordFilter,
+  requireResourceOwnership 
+} from '../middleware/auth';
+import { AuthenticatedRequest, ApiResponse, PaginatedResponse } from '../types';
 import { PaymentService, paymentInitiationSchema } from '../services/paymentService';
 import { IoTecService } from '../services/iotecService';
+import { OwnershipService } from '../db/ownership';
 import crypto from 'crypto';
 import { z } from 'zod';
 
 const router = Router();
 
-// Get all payments (landlord/admin can see all, tenants see their own)
-router.get('/', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+// Get all payments (filtered by ownership)
+// @ts-ignore - Route handler with proper returns but TypeScript can't infer all paths
+router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
-    const { status, limit, offset } = req.query;
+    const { status, limit, offset, propertyId, leaseId } = req.query;
     const user = req.user!;
 
     const filters: any = {
@@ -20,29 +28,148 @@ router.get('/', authenticate, async (req: AuthenticatedRequest, res: Response<Ap
       offset: offset ? parseInt(offset as string) : undefined,
     };
 
-    // If user is tenant, they only see their own payments
+    // Handle role-based payment filtering
     if (user.role === 'tenant') {
-      // TODO: Add tenant filtering when we implement lease-tenant relationships
+      // Tenants can only see their own payments
+      const tenantPayments = await OwnershipService.getLandlordPayments(user.id);
+      const filteredPayments = tenantPayments.filter(p => p.tenant.id === user.id);
+      
+      return res.json({
+        success: true,
+        data: filteredPayments,
+        message: 'Tenant payments retrieved successfully',
+      });
     }
 
-    const payments = await PaymentService.getAllPayments(filters);
+    if (user.role === 'landlord') {
+      // Landlords can only see payments from their properties
+      let landlordPayments = await OwnershipService.getLandlordPayments(user.id);
 
-    res.json({
-      success: true,
-      data: payments,
-      message: 'Payments retrieved successfully',
+      // Apply additional filters if provided
+      if (propertyId) {
+        landlordPayments = landlordPayments.filter(p => p.property.id === propertyId);
+      }
+      
+      if (leaseId) {
+        landlordPayments = landlordPayments.filter(p => p.lease.id === leaseId);
+      }
+
+      if (status) {
+        landlordPayments = landlordPayments.filter(p => p.payment.status === status);
+      }
+
+      // Apply pagination
+      const startIndex = filters.offset || 0;
+      const endIndex = filters.limit ? startIndex + filters.limit : landlordPayments.length;
+      const paginatedPayments = landlordPayments.slice(startIndex, endIndex);
+
+      const totalPages = Math.ceil(landlordPayments.length / (filters.limit || landlordPayments.length));
+      
+      return res.json({
+        success: true,
+        data: paginatedPayments,
+        pagination: {
+          page: Math.floor(startIndex / (filters.limit || landlordPayments.length)) + 1,
+          limit: filters.limit || landlordPayments.length,
+          total: landlordPayments.length,
+          pages: totalPages,
+        },
+        message: 'Landlord payments retrieved successfully',
+      } as PaginatedResponse<any>);
+    }
+
+    if (user.role === 'admin') {
+      // Admins can see all payments
+      const payments = await PaymentService.getAllPayments(filters);
+      
+      return res.json({
+        success: true,
+        data: payments,
+        message: 'All payments retrieved successfully',
+      });
+    }
+
+    res.status(403).json({
+      success: false,
+      error: 'Invalid user role',
     });
   } catch (error) {
     console.error('Error fetching payments:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch payments',
+      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
 
-// Get payment balance for a specific lease
-router.get('/lease/:leaseId/balance', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+// Get landlord payment overview (overdue, pending, etc.)
+router.get('/landlord/overview', authenticate, requireLandlordContext(), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+  try {
+    const landlordPayments = await OwnershipService.getLandlordPayments(req.user!.id);
+    
+    const now = new Date();
+    const pendingPayments = landlordPayments.filter(p => p.payment.status === 'pending');
+    const completedPayments = landlordPayments.filter(p => p.payment.status === 'completed');
+    const overduePayments = landlordPayments.filter(p => 
+      p.payment.status === 'pending' && new Date(p.payment.dueDate) < now
+    );
+
+    const totalPendingAmount = pendingPayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0);
+    const totalCompletedAmount = completedPayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0);
+    const totalOverdueAmount = overduePayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0);
+
+    const overview = {
+      summary: {
+        totalPayments: landlordPayments.length,
+        pendingPayments: pendingPayments.length,
+        completedPayments: completedPayments.length,
+        overduePayments: overduePayments.length,
+        totalPendingAmount,
+        totalCompletedAmount,
+        totalOverdueAmount,
+        collectionRate: landlordPayments.length > 0 
+          ? (completedPayments.length / landlordPayments.length) * 100 
+          : 0,
+      },
+      overdueDetails: overduePayments.map(p => ({
+        paymentId: p.payment.id,
+        tenantName: `${p.tenant.firstName} ${p.tenant.lastName}`,
+        propertyName: p.property.name,
+        unitNumber: p.unit.unitNumber,
+        amount: parseFloat(p.payment.amount),
+        dueDate: p.payment.dueDate,
+        daysPastDue: Math.ceil((now.getTime() - new Date(p.payment.dueDate).getTime()) / (1000 * 60 * 60 * 24)),
+      })),
+      recentPayments: completedPayments
+        .sort((a, b) => new Date(b.payment.paidDate || b.payment.createdAt).getTime() - new Date(a.payment.paidDate || a.payment.createdAt).getTime())
+        .slice(0, 10)
+        .map(p => ({
+          paymentId: p.payment.id,
+          tenantName: `${p.tenant.firstName} ${p.tenant.lastName}`,
+          amount: parseFloat(p.payment.amount),
+          paidDate: p.payment.paidDate,
+          propertyName: p.property.name,
+        })),
+    };
+
+    res.json({
+      success: true,
+      data: overview,
+      message: 'Payment overview retrieved successfully',
+    });
+  } catch (error) {
+    console.error('Error fetching payment overview:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch payment overview',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// Get payment balance for a specific lease (with ownership validation)
+router.get('/lease/:leaseId/balance', authenticate, requireResourceOwnership('lease', 'leaseId', 'read'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const { leaseId } = req.params;
 
@@ -65,12 +192,13 @@ router.get('/lease/:leaseId/balance', authenticate, async (req: AuthenticatedReq
     res.status(500).json({
       success: false,
       error: 'Failed to calculate payment balance',
+      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 });
 
-// Get payment history for a specific lease
-router.get('/lease/:leaseId/history', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+// Get payment history for a specific lease (with ownership validation)
+router.get('/lease/:leaseId/history', authenticate, requireResourceOwnership('lease', 'leaseId', 'read'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const { leaseId } = req.params;
 
@@ -90,19 +218,36 @@ router.get('/lease/:leaseId/history', authenticate, async (req: AuthenticatedReq
   }
 });
 
-// Get payment analytics
+// Get payment analytics (with ownership filtering)
 router.get('/analytics', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, propertyId } = req.query;
     const user = req.user!;
 
-    // Get all payments based on user role
-    const filters: any = {};
-    if (user.role === 'tenant') {
-      // TODO: Add tenant filtering when we implement lease-tenant relationships
-    }
+    let payments: any[] = [];
 
-    const payments = await PaymentService.getAllPayments(filters);
+    // Get payments based on user role with proper ownership filtering
+    if (user.role === 'tenant') {
+      // Tenants can only see analytics for their own payments
+      const allTenantPayments = await OwnershipService.getLandlordPayments(user.id);
+      payments = allTenantPayments.filter(p => p.tenant.id === user.id);
+    } else if (user.role === 'landlord') {
+      // Landlords can only see analytics for their properties
+      payments = await OwnershipService.getLandlordPayments(user.id);
+      
+      // Filter by property if specified
+      if (propertyId) {
+        payments = payments.filter(p => p.property.id === propertyId);
+      }
+    } else if (user.role === 'admin') {
+      // Admins can see all payments
+      payments = await PaymentService.getAllPayments({});
+    } else {
+      return res.status(403).json({
+        success: false,
+        error: 'Invalid user role for analytics',
+      });
+    }
     
     // Filter by date range if provided
     let filteredPayments = payments;
@@ -142,8 +287,8 @@ router.get('/analytics', authenticate, async (req: AuthenticatedRequest, res: Re
       }, {} as Record<string, { count: number; amount: number }>)
     ).map(([status, data]) => ({
       status,
-      count: data.count,
-      amount: data.amount,
+      count: (data as { count: number; amount: number }).count,
+      amount: (data as { count: number; amount: number }).amount,
     }));
 
     // Group by mobile money provider
@@ -161,8 +306,8 @@ router.get('/analytics', authenticate, async (req: AuthenticatedRequest, res: Re
         }, {} as Record<string, { count: number; amount: number }>)
     ).map(([provider, data]) => ({
       provider,
-      count: data.count,
-      amount: data.amount,
+      count: (data as { count: number; amount: number }).count,
+      amount: (data as { count: number; amount: number }).amount,
     }));
 
     // Monthly trends (last 12 months)

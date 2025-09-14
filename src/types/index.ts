@@ -1,4 +1,5 @@
 import { Request } from 'express';
+import { OwnershipContext } from './ownership';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -6,6 +7,7 @@ export interface AuthenticatedRequest extends Request {
     email: string;
     role: 'admin' | 'landlord' | 'tenant';
   };
+  ownershipContext?: OwnershipContext;
 }
 
 export interface JwtPayload {
@@ -34,3 +36,6 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
     pages: number;
   };
 }
+
+// Re-export ownership types
+export * from './ownership';

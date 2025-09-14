@@ -8,6 +8,13 @@
       "when": 1757753211703,
       "tag": "0000_melodic_kronos",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1757867885104,
+      "tag": "0001_strong_black_bolt",
+      "breakpoints": true
     }
   ]
 }

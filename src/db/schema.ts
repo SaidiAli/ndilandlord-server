@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, decimal, integer, boolean, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, decimal, integer, boolean, pgEnum, index, unique } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Enums
@@ -34,7 +34,12 @@ export const properties = pgTable('properties', {
   landlordId: uuid('landlord_id').references(() => users.id).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  // Index for efficient landlord property lookups
+  landlordIdIdx: index('idx_properties_landlord_id').on(table.landlordId),
+  // Index for property searches by city
+  cityIdx: index('idx_properties_city').on(table.city),
+}));
 
 // Units table
 export const units = pgTable('units', {
@@ -50,7 +55,14 @@ export const units = pgTable('units', {
   description: text('description'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  // Index for efficient property unit lookups
+  propertyIdIdx: index('idx_units_property_id').on(table.propertyId),
+  // Unique constraint for unit number within a property
+  uniqueUnitNumber: unique('unique_unit_per_property').on(table.propertyId, table.unitNumber),
+  // Index for available units
+  availabilityIdx: index('idx_units_availability').on(table.isAvailable),
+}));
 
 // Leases table
 export const leases = pgTable('leases', {
@@ -65,7 +77,18 @@ export const leases = pgTable('leases', {
   terms: text('terms'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  // Index for efficient tenant lease lookups
+  tenantIdIdx: index('idx_leases_tenant_id').on(table.tenantId),
+  // Index for unit lease lookups
+  unitIdIdx: index('idx_leases_unit_id').on(table.unitId),
+  // Index for lease status queries
+  statusIdx: index('idx_leases_status').on(table.status),
+  // Unique constraint: Only one active lease per unit at a time
+  uniqueActiveLeasePerUnit: unique('unique_active_lease_per_unit').on(table.unitId, table.status),
+  // Index for date range queries
+  dateRangeIdx: index('idx_leases_date_range').on(table.startDate, table.endDate),
+}));
 
 // Payments table
 export const payments = pgTable('payments', {
@@ -80,7 +103,16 @@ export const payments = pgTable('payments', {
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  // Index for efficient lease payment lookups
+  leaseIdIdx: index('idx_payments_lease_id').on(table.leaseId),
+  // Index for payment status queries
+  statusIdx: index('idx_payments_status').on(table.status),
+  // Index for due date queries (overdue payments)
+  dueDateIdx: index('idx_payments_due_date').on(table.dueDate),
+  // Index for transaction tracking
+  transactionIdIdx: index('idx_payments_transaction_id').on(table.transactionId),
+}));
 
 // Maintenance Requests table
 export const maintenanceRequests = pgTable('maintenance_requests', {
@@ -96,7 +128,18 @@ export const maintenanceRequests = pgTable('maintenance_requests', {
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  // Index for efficient tenant maintenance request lookups
+  tenantIdIdx: index('idx_maintenance_requests_tenant_id').on(table.tenantId),
+  // Index for unit maintenance request lookups
+  unitIdIdx: index('idx_maintenance_requests_unit_id').on(table.unitId),
+  // Index for status-based queries
+  statusIdx: index('idx_maintenance_requests_status').on(table.status),
+  // Index for priority-based queries
+  priorityIdx: index('idx_maintenance_requests_priority').on(table.priority),
+  // Index for submission date queries
+  submittedAtIdx: index('idx_maintenance_requests_submitted_at').on(table.submittedAt),
+}));
 
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({

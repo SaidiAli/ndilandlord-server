@@ -215,8 +215,8 @@ export class PaymentService {
           tenantId: row.tenantId,
           startDate: row.leaseStartDate,
           endDate: row.leaseEndDate,
-          monthlyRent: parseFloat(row.monthlyRent),
-          deposit: parseFloat(row.deposit),
+          monthlyRent: parseFloat(row.monthlyRent || '0'),
+          deposit: parseFloat(row.deposit || '0'),
           status: row.leaseStatus as 'draft' | 'active' | 'expired' | 'terminated',
           terms: null,
           createdAt: '', // Would need from leases table
@@ -339,7 +339,8 @@ export class PaymentService {
     offset?: number;
   }) {
     try {
-      let query = db
+      // Build base query
+      let baseQuery = db
         .select({
           payment: payments,
           lease: leases,
@@ -353,25 +354,27 @@ export class PaymentService {
         })
         .from(payments)
         .leftJoin(leases, eq(payments.leaseId, leases.id))
-        .leftJoin(users, eq(leases.tenantId, users.id));
+        .leftJoin(users, eq(leases.tenantId, users.id))
+        .orderBy(desc(payments.createdAt));
 
-      // Apply filters
+      // Apply filters and build final query
+      let finalQuery;
       if (filters?.status) {
-        query = query.where(eq(payments.status, filters.status));
+        finalQuery = baseQuery.where(eq(payments.status, filters.status));
+      } else {
+        finalQuery = baseQuery;
       }
 
-      // Add ordering
-      query = query.orderBy(desc(payments.createdAt));
-
-      // Add pagination
-      if (filters?.limit) {
-        query = query.limit(filters.limit);
-      }
-      if (filters?.offset) {
-        query = query.offset(filters.offset);
+      // Apply pagination if specified
+      if (filters?.limit && filters?.offset) {
+        finalQuery = finalQuery.limit(filters.limit).offset(filters.offset);
+      } else if (filters?.limit) {
+        finalQuery = finalQuery.limit(filters.limit);
+      } else if (filters?.offset) {
+        finalQuery = finalQuery.offset(filters.offset);
       }
 
-      const result = await query;
+      const result = await finalQuery;
       return result;
     } catch (error) {
       console.error('Error fetching payments:', error);

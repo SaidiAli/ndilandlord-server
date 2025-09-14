@@ -10,6 +10,7 @@ import propertyRoutes from './routes/properties';
 import unitRoutes from './routes/units';
 import leaseRoutes from './routes/leases';
 import paymentRoutes from './routes/payments';
+import landlordRoutes from './routes/landlords';
 // import maintenanceRoutes from './routes/maintenance';
 
 dotenv.config();
@@ -62,7 +63,8 @@ app.use('/api/properties', propertyRoutes);
 app.use('/api/units', unitRoutes);
 app.use('/api/leases', leaseRoutes);
 app.use('/api/payments', paymentRoutes);
-// app.use('/api/maintenance', maintenanceRoutes);
+app.use('/api/landlords', landlordRoutes);
+// app.use('/api/maintenance', maintenanceRoutes); // Post-MVP
 
 // Error handling middleware
 app.use(notFound);
