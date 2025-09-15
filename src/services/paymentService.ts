@@ -40,6 +40,7 @@ export const paymentInitiationSchema = z.object({
   leaseId: z.string().uuid('Invalid lease ID'),
   amount: z.number().min(10000, 'Minimum payment amount is UGX 10,000'),
   paymentMethod: z.string().optional().default('mobile_money'),
+  provider: z.enum(['mtn', 'airtel', 'm-sente']),
   phoneNumber: z.string().regex(/^[0-9]{10,12}$/, 'Invalid phone number').optional(),
 });
 
@@ -244,6 +245,8 @@ export class PaymentService {
     amount: number;
     transactionId: string;
     paymentMethod?: string;
+    phoneNumber?: string;
+    mobileMoneyProvider?: string;
     dueDate?: Date;
   }) {
     try {

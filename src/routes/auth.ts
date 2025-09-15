@@ -14,7 +14,7 @@ const router = Router();
 // Validation schemas
 const registerSchema = z.object({
   email: z.string().email().optional(),
-  userName: z.string().min(1),
+  username: z.string().min(1),
   password: z.string().min(6),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
@@ -23,22 +23,22 @@ const registerSchema = z.object({
 });
 
 const loginSchema = z.object({
-  userName: z.string().min(1),
+  username: z.string().min(1),
   password: z.string().min(1),
 });
 
 // @ts-ignore
 router.post('/register', validateBody(registerSchema), async (req: Request, res: Response<ApiResponse>) => {
   try {
-    const { userName, password, firstName, lastName, phone, role } = req.body;
+    const { username, password, firstName, lastName, phone, role } = req.body;
 
     // Check if user already exists
-    const existingUser = await db.select().from(users).where(eq(users.userName, userName)).limit(1);
+    const existingUser = await db.select().from(users).where(eq(users.userName, username)).limit(1);
 
     if (existingUser.length > 0) {
       return res.status(409).json({
         success: false,
-        error: 'User already exists with this email',
+        error: 'User already exists with this username',
       });
     }
 
@@ -48,7 +48,7 @@ router.post('/register', validateBody(registerSchema), async (req: Request, res:
 
     // Create user
     const newUser = await db.insert(users).values({
-      userName,
+      userName: username,
       password: hashedPassword,
       firstName,
       lastName,
@@ -101,10 +101,10 @@ router.post('/register', validateBody(registerSchema), async (req: Request, res:
 // @ts-ignore
 router.post('/login', validateBody(loginSchema), async (req: Request, res: Response<ApiResponse>) => {
   try {
-    const { userName, password } = req.body;
+    const { username, password } = req.body;
 
     // Find user
-    const user = await db.select().from(users).where(eq(users.userName, userName)).limit(1);
+    const user = await db.select().from(users).where(eq(users.userName, username)).limit(1);
 
     if (user.length === 0) {
       return res.status(401).json({
@@ -155,6 +155,7 @@ router.post('/login', validateBody(loginSchema), async (req: Request, res: Respo
       data: {
         user: {
           id: user[0].id,
+          userName: user[0].userName,
           email: user[0].email,
           firstName: user[0].firstName,
           lastName: user[0].lastName,

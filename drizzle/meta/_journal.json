@@ -15,6 +15,13 @@
       "when": 1757867885104,
       "tag": "0001_strong_black_bolt",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1757882281315,
+      "tag": "0002_tearful_jimmy_woo",
+      "breakpoints": true
     }
   ]
 }

@@ -31,6 +31,13 @@ export interface TenantWithLeaseCreation extends TenantCreationData {
   leaseData: LeaseCreationData;
 }
 
+export interface UserProfileUpdateData {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+}
+
 // Validation schemas
 export const tenantCreationSchema = z.object({
   email: z.string().email('Invalid email address').optional(),
@@ -51,6 +58,13 @@ export const tenantWithLeaseCreationSchema = z.object({
     deposit: z.number().min(0, 'Deposit cannot be negative'),
     terms: z.string().optional(),
   }),
+});
+
+export const userProfileUpdateSchema = z.object({
+  firstName: z.string().min(1, 'First name is required').optional(),
+  lastName: z.string().min(1, 'Last name is required').optional(),
+  email: z.string().email('Invalid email address').optional(),
+  phone: z.string().regex(/^[0-9+\-\s()]+$/, 'Invalid phone number').optional(),
 });
 
 export class UserService {
@@ -383,6 +397,37 @@ export class UserService {
   }
 
   /**
+     * Update user profile information (self-update)
+     */
+  static async updateProfile(userId: string, updates: UserProfileUpdateData) {
+    try {
+      const validatedData = userProfileUpdateSchema.parse(updates);
+
+      const updatedUser = await db
+        .update(users)
+        .set({ ...validatedData, updatedAt: new Date() })
+        .where(eq(users.id, userId))
+        .returning({
+          id: users.id,
+          email: users.email,
+          userName: users.userName,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          phone: users.phone,
+          role: users.role,
+          isActive: users.isActive,
+          updatedAt: users.updatedAt,
+        });
+
+      return updatedUser[0];
+
+    } catch (error) {
+      console.error('Error updating user profile:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get user by ID with ownership validation
    */
   static async getUserById(
@@ -488,7 +533,7 @@ export class UserService {
 
       // Build where conditions
       let whereConditions = [];
-      
+
       if (filters?.role) {
         whereConditions.push(eq(users.role, filters.role));
       }

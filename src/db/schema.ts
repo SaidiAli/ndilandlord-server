@@ -6,6 +6,7 @@ export const userRoleEnum = pgEnum('user_role', ['admin', 'landlord', 'tenant'])
 export const leaseStatusEnum = pgEnum('lease_status', ['draft', 'active', 'expired', 'terminated']);
 export const paymentStatusEnum = pgEnum('payment_status', ['pending', 'completed', 'failed', 'refunded']);
 export const maintenanceStatusEnum = pgEnum('maintenance_status', ['submitted', 'in_progress', 'completed', 'cancelled']);
+export const mobileMoneyProviderEnum = pgEnum('mobile_money_provider', ['mtn', 'airtel', 'm-sente']);
 
 // Users table
 export const users = pgTable('users', {
@@ -99,6 +100,8 @@ export const payments = pgTable('payments', {
   paidDate: timestamp('paid_date'),
   status: paymentStatusEnum('status').default('pending').notNull(),
   paymentMethod: varchar('payment_method', { length: 50 }),
+  mobileMoneyProvider: mobileMoneyProviderEnum('mobile_money_provider'),
+  phoneNumber: varchar('phone_number', { length: 20 }),
   transactionId: varchar('transaction_id', { length: 255 }),
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),

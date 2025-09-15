@@ -48,6 +48,13 @@ const updateUserSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+const updateProfileSchema = z.object({
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  email: z.string().email().optional(),
+  phone: z.string().optional(),
+});
+
 // Get all users (admin only) with optional filtering
 router.get('/', authenticate, authorize('admin'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
@@ -213,6 +220,25 @@ router.put('/:id', authenticate, validateBody(updateUserSchema), async (req: Aut
     res.status(400).json({
       success: false,
       error: 'Failed to update user',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// Update user profile (self-update)
+router.put('/profile', authenticate, validateBody(updateProfileSchema), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+  try {
+    const updatedUser = await UserService.updateProfile(req.user!.id, req.body);
+    res.json({
+      success: true,
+      data: updatedUser,
+      message: 'Profile updated successfully',
+    });
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to update profile',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }

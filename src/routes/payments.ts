@@ -394,7 +394,7 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
       });
     }
 
-    const { leaseId, amount, phoneNumber } = validationResult.data;
+    const { leaseId, amount, phoneNumber, provider } = validationResult.data;
 
     // Validate payment amount against lease balance
     const validation = await PaymentService.validatePayment(leaseId, amount);
@@ -431,6 +431,8 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
       amount,
       transactionId: iotecResponse.id, // Use IoTec transaction ID
       paymentMethod: 'mobile_money',
+      phoneNumber: phoneNumber,
+      mobileMoneyProvider: provider,
     });
 
     const response = {
