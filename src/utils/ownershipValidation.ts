@@ -124,14 +124,13 @@ export class OwnershipValidation {
     // Verify tenant can access their own data
     switch (resourceType) {
       case 'lease':
-        // Tenant can only access their own leases
-        const tenantLeases = await OwnershipService.getLandlordTenants(tenantId);
-        const hasAccess = tenantLeases.some(lease => lease.tenantId === tenantId);
+        // Tenant can only access their own active leases
+        const hasLeaseAccess = await OwnershipService.isTenantOwnerOfLease(tenantId, resourceId);
         
-        if (!hasAccess) {
+        if (!hasLeaseAccess) {
           return { 
             isAuthorized: false, 
-            reason: 'You can only access your own lease information',
+            reason: 'You can only access your own active lease information',
             alternativeAction: 'Contact your landlord'
           };
         }
@@ -139,8 +138,8 @@ export class OwnershipValidation {
 
       case 'payment':
         // Verify payment belongs to tenant's lease
-        const chain = await OwnershipService.getOwnershipChain('payment', resourceId);
-        if (!chain || chain.tenantId !== tenantId) {
+        const hasPaymentAccess = await OwnershipService.isTenantOwnerOfPayment(tenantId, resourceId);
+        if (!hasPaymentAccess) {
           return { 
             isAuthorized: false, 
             reason: 'You can only access your own payments',
@@ -151,8 +150,8 @@ export class OwnershipValidation {
 
       case 'maintenance_request':
         // Tenant can access their own maintenance requests
-        const isOwner = await OwnershipService.isLandlordOwnerOfMaintenanceRequest(tenantId, resourceId);
-        if (!isOwner) {
+        const hasMaintenanceAccess = await OwnershipService.isTenantOwnerOfMaintenanceRequest(tenantId, resourceId);
+        if (!hasMaintenanceAccess) {
           return { 
             isAuthorized: false, 
             reason: 'You can only access your own maintenance requests',

@@ -31,12 +31,11 @@ router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedR
     // Handle role-based payment filtering
     if (user.role === 'tenant') {
       // Tenants can only see their own payments
-      const tenantPayments = await OwnershipService.getLandlordPayments(user.id);
-      const filteredPayments = tenantPayments.filter(p => p.tenant.id === user.id);
+      const tenantPayments = await OwnershipService.getTenantPayments(user.id);
       
       return res.json({
         success: true,
-        data: filteredPayments,
+        data: tenantPayments,
         message: 'Tenant payments retrieved successfully',
       });
     }
@@ -229,8 +228,7 @@ router.get('/analytics', authenticate, async (req: AuthenticatedRequest, res: Re
     // Get payments based on user role with proper ownership filtering
     if (user.role === 'tenant') {
       // Tenants can only see analytics for their own payments
-      const allTenantPayments = await OwnershipService.getLandlordPayments(user.id);
-      payments = allTenantPayments.filter(p => p.tenant.id === user.id);
+      payments = await OwnershipService.getTenantPayments(user.id);
     } else if (user.role === 'landlord') {
       // Landlords can only see analytics for their properties
       payments = await OwnershipService.getLandlordPayments(user.id);

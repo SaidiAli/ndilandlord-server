@@ -11,6 +11,7 @@ import unitRoutes from './routes/units';
 import leaseRoutes from './routes/leases';
 import paymentRoutes from './routes/payments';
 import landlordRoutes from './routes/landlords';
+import tenantRoutes from './routes/tenant';
 // import maintenanceRoutes from './routes/maintenance';
 
 dotenv.config();
@@ -21,7 +22,14 @@ const PORT = process.env.PORT || 4000;
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:4000',
+  origin: [
+    process.env.FRONTEND_URL || 'http://localhost:3000',
+    'http://localhost:3000', // Admin dashboard
+    'http://localhost:3001', // Admin dashboard alternative
+    'http://localhost:8081', // Expo dev server  
+    'http://192.168.100.30:8081', // Expo dev server with IP
+    'http://10.0.2.2:4000', // Android emulator
+  ],
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
@@ -64,6 +72,7 @@ app.use('/api/units', unitRoutes);
 app.use('/api/leases', leaseRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/landlords', landlordRoutes);
+app.use('/api/tenant', tenantRoutes);
 // app.use('/api/maintenance', maintenanceRoutes); // Post-MVP
 
 // Error handling middleware

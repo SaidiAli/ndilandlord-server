@@ -46,6 +46,35 @@ export const paymentInitiationSchema = z.object({
 
 export class PaymentService {
   /**
+   * Calculate accurate number of months owed from lease start to current date
+   */
+  private static calculateMonthsOwed(leaseStart: Date, currentDate: Date): number {
+    const startYear = leaseStart.getFullYear();
+    const startMonth = leaseStart.getMonth();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth();
+    
+    // Calculate total months from lease start to current month
+    let monthsOwed = (currentYear - startYear) * 12 + (currentMonth - startMonth);
+    
+    // Always include the first month of the lease
+    monthsOwed = Math.max(1, monthsOwed + 1);
+    
+    return monthsOwed;
+  }
+
+  /**
+   * Calculate next payment due date (next month)
+   */
+  private static calculateNextPaymentDate(currentDueDate: Date): Date {
+    const nextDue = new Date(currentDueDate);
+    nextDue.setMonth(nextDue.getMonth() + 1);
+    nextDue.setDate(1); // Always due on 1st
+    nextDue.setHours(0, 0, 0, 0);
+    return nextDue;
+  }
+
+  /**
    * Calculate payment balance for a specific lease
    */
   static async calculateBalance(leaseId: string): Promise<PaymentBalance | null> {
@@ -79,23 +108,25 @@ export class PaymentService {
       const totalPaid = Number(paidPayments[0]?.totalPaid || 0);
       const monthlyRent = Number(leaseData.monthlyRent);
       
-      // Calculate months since lease start
+      // Calculate accurate months since lease start
       const leaseStart = new Date(leaseData.startDate);
       const currentDate = new Date();
-      const monthsDiff = Math.floor(
-        (currentDate.getTime() - leaseStart.getTime()) / (1000 * 60 * 60 * 24 * 30)
-      );
-      const monthsOwed = Math.max(1, monthsDiff + 1); // At least current month
       
+      // More accurate month calculation
+      const monthsOwed = this.calculateMonthsOwed(leaseStart, currentDate);
       const totalOwed = monthlyRent * monthsOwed;
       const outstandingBalance = Math.max(0, totalOwed - totalPaid);
       
-      // Calculate next payment due date
+      // Calculate next payment due date (1st of the month after months owed)
       const nextDueDate = new Date(leaseStart);
-      nextDueDate.setMonth(nextDueDate.getMonth() + monthsOwed);
+      nextDueDate.setMonth(leaseStart.getMonth() + monthsOwed);
+      nextDueDate.setDate(1); // Always due on 1st of month
+      nextDueDate.setHours(0, 0, 0, 0); // Start of day
       
       // Check if payment is overdue (more than 5 days past due date)
-      const isOverdue = currentDate.getTime() > (nextDueDate.getTime() + 5 * 24 * 60 * 60 * 1000);
+      const gracePeriodEnd = new Date(nextDueDate);
+      gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 5);
+      const isOverdue = currentDate > gracePeriodEnd;
 
       return {
         leaseId,
@@ -105,7 +136,7 @@ export class PaymentService {
         minimumPayment: Math.min(10000, outstandingBalance), // Minimum 10k UGX or remaining balance
         dueDate: nextDueDate.toISOString(),
         isOverdue,
-        nextPaymentDue: new Date(nextDueDate.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        nextPaymentDue: outstandingBalance > 0 ? nextDueDate.toISOString() : this.calculateNextPaymentDate(nextDueDate).toISOString(),
       };
     } catch (error) {
       console.error('Error calculating payment balance:', error);

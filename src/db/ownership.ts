@@ -45,9 +45,20 @@ export class OwnershipService {
   }
 
   /**
+   * Validate UUID format
+   */
+  private static isValidUUID(id: string): boolean {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(id);
+  }
+
+  /**
    * Get the landlord for a specific tenant based on their active lease
    */
   static async getTenantLandlord(tenantId: string): Promise<string | null> {
+    if (!this.isValidUUID(tenantId)) {
+      return null;
+    }
     const result = await db
       .select({
         landlordId: properties.landlordId,
@@ -70,6 +81,9 @@ export class OwnershipService {
    * Verify if a landlord owns a specific property
    */
   static async isLandlordOwnerOfProperty(landlordId: string, propertyId: string): Promise<boolean> {
+    if (!this.isValidUUID(landlordId) || !this.isValidUUID(propertyId)) {
+      return false;
+    }
     const result = await db
       .select({ id: properties.id })
       .from(properties)
@@ -88,6 +102,9 @@ export class OwnershipService {
    * Verify if a landlord owns a specific unit
    */
   static async isLandlordOwnerOfUnit(landlordId: string, unitId: string): Promise<boolean> {
+    if (!this.isValidUUID(landlordId) || !this.isValidUUID(unitId)) {
+      return false;
+    }
     const result = await db
       .select({ id: units.id })
       .from(units)
@@ -107,6 +124,9 @@ export class OwnershipService {
    * Verify if a landlord owns a specific lease
    */
   static async isLandlordOwnerOfLease(landlordId: string, leaseId: string): Promise<boolean> {
+    if (!this.isValidUUID(landlordId) || !this.isValidUUID(leaseId)) {
+      return false;
+    }
     const result = await db
       .select({ id: leases.id })
       .from(leases)
@@ -127,6 +147,9 @@ export class OwnershipService {
    * Verify if a landlord has access to a specific tenant's data
    */
   static async isLandlordOwnerOfTenant(landlordId: string, tenantId: string): Promise<boolean> {
+    if (!this.isValidUUID(landlordId) || !this.isValidUUID(tenantId)) {
+      return false;
+    }
     const tenantLandlord = await this.getTenantLandlord(tenantId);
     return tenantLandlord === landlordId;
   }
@@ -135,6 +158,9 @@ export class OwnershipService {
    * Verify if a landlord owns a specific payment
    */
   static async isLandlordOwnerOfPayment(landlordId: string, paymentId: string): Promise<boolean> {
+    if (!this.isValidUUID(landlordId) || !this.isValidUUID(paymentId)) {
+      return false;
+    }
     const result = await db
       .select({ id: payments.id })
       .from(payments)
@@ -156,6 +182,9 @@ export class OwnershipService {
    * Verify if a landlord owns a specific maintenance request
    */
   static async isLandlordOwnerOfMaintenanceRequest(landlordId: string, maintenanceRequestId: string): Promise<boolean> {
+    if (!this.isValidUUID(landlordId) || !this.isValidUUID(maintenanceRequestId)) {
+      return false;
+    }
     const result = await db
       .select({ id: maintenanceRequests.id })
       .from(maintenanceRequests)
@@ -313,5 +342,156 @@ export class OwnershipService {
       default:
         return null;
     }
+  }
+
+  /**
+   * Get tenant's active leases (for tenant-specific validation)
+   */
+  static async getTenantActiveLeases(tenantId: string) {
+    if (!this.isValidUUID(tenantId)) {
+      return [];
+    }
+
+    return await db
+      .select({
+        lease: leases,
+        unit: units,
+        property: properties,
+      })
+      .from(leases)
+      .innerJoin(units, eq(leases.unitId, units.id))
+      .innerJoin(properties, eq(units.propertyId, properties.id))
+      .where(
+        and(
+          eq(leases.tenantId, tenantId),
+          eq(leases.status, 'active')
+        )
+      );
+  }
+
+  /**
+   * Get tenant's payment history (tenant-specific method)
+   */
+  static async getTenantPayments(tenantId: string) {
+    if (!this.isValidUUID(tenantId)) {
+      return [];
+    }
+
+    return await db
+      .select({
+        payment: payments,
+        lease: leases,
+        unit: units,
+        property: properties,
+        tenant: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          phone: users.phone,
+        },
+      })
+      .from(payments)
+      .innerJoin(leases, eq(payments.leaseId, leases.id))
+      .innerJoin(units, eq(leases.unitId, units.id))
+      .innerJoin(properties, eq(units.propertyId, properties.id))
+      .innerJoin(users, eq(leases.tenantId, users.id))
+      .where(eq(leases.tenantId, tenantId));
+  }
+
+  /**
+   * Verify if a tenant owns a specific maintenance request
+   */
+  static async isTenantOwnerOfMaintenanceRequest(tenantId: string, maintenanceRequestId: string): Promise<boolean> {
+    if (!this.isValidUUID(tenantId) || !this.isValidUUID(maintenanceRequestId)) {
+      return false;
+    }
+
+    const result = await db
+      .select({ id: maintenanceRequests.id })
+      .from(maintenanceRequests)
+      .where(
+        and(
+          eq(maintenanceRequests.id, maintenanceRequestId),
+          eq(maintenanceRequests.tenantId, tenantId)
+        )
+      )
+      .limit(1);
+
+    return result.length > 0;
+  }
+
+  /**
+   * Verify if a tenant has access to a specific lease (owns it)
+   */
+  static async isTenantOwnerOfLease(tenantId: string, leaseId: string): Promise<boolean> {
+    if (!this.isValidUUID(tenantId) || !this.isValidUUID(leaseId)) {
+      return false;
+    }
+
+    const result = await db
+      .select({ id: leases.id })
+      .from(leases)
+      .where(
+        and(
+          eq(leases.id, leaseId),
+          eq(leases.tenantId, tenantId),
+          eq(leases.status, 'active') // Only active leases
+        )
+      )
+      .limit(1);
+
+    return result.length > 0;
+  }
+
+  /**
+   * Verify if a tenant has access to a specific payment (through their lease)
+   */
+  static async isTenantOwnerOfPayment(tenantId: string, paymentId: string): Promise<boolean> {
+    if (!this.isValidUUID(tenantId) || !this.isValidUUID(paymentId)) {
+      return false;
+    }
+
+    const result = await db
+      .select({ id: payments.id })
+      .from(payments)
+      .innerJoin(leases, eq(payments.leaseId, leases.id))
+      .where(
+        and(
+          eq(payments.id, paymentId),
+          eq(leases.tenantId, tenantId)
+        )
+      )
+      .limit(1);
+
+    return result.length > 0;
+  }
+
+  /**
+   * Get tenant's current lease information
+   */
+  static async getTenantCurrentLease(tenantId: string) {
+    if (!this.isValidUUID(tenantId)) {
+      return null;
+    }
+
+    const result = await db
+      .select({
+        lease: leases,
+        unit: units,
+        property: properties,
+      })
+      .from(leases)
+      .innerJoin(units, eq(leases.unitId, units.id))
+      .innerJoin(properties, eq(units.propertyId, properties.id))
+      .where(
+        and(
+          eq(leases.tenantId, tenantId),
+          eq(leases.status, 'active')
+        )
+      )
+      .limit(1);
+
+    return result.length > 0 ? result[0] : null;
   }
 }
