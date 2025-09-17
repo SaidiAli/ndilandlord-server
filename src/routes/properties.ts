@@ -35,6 +35,13 @@ const updatePropertySchema = z.object({
 // Get all properties (filtered by landlord)
 router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated',
+      });
+    }
+
     const { city, state } = req.query;
     
     const filters = {
@@ -42,7 +49,8 @@ router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedR
       state: state as string,
     };
 
-    const properties = await PropertyService.getLandlordProperties(req.user!.id, filters);
+    const landlordId = req.user.id;
+    const properties = await PropertyService.getLandlordProperties(landlordId, filters);
 
     res.json({
       success: true,
