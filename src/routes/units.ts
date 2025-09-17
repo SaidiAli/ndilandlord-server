@@ -52,24 +52,14 @@ const bulkCreateUnitsSchema = z.object({
 // Get all units (filtered by landlord)
 router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
-    const { propertyId, isAvailable, minBedrooms, maxRent } = req.query;
-
-    if (req.user!.role === 'admin') {
-      // Admin logic would go here - for now, return empty
-      return res.json({
-        success: true,
-        data: [],
-        message: 'Admin units view - to be implemented',
-      });
-    }
-
-    if (req.user!.role === 'tenant') {
-      // Tenants should not access units directly
-      return res.status(403).json({
+    if (!req.user) {
+      return res.status(401).json({
         success: false,
-        error: 'Tenants cannot access unit listings directly',
+        error: 'User not authenticated',
       });
     }
+
+    const { propertyId, isAvailable, minBedrooms, maxRent } = req.query;
 
     // Landlord logic
     const filters = {
@@ -79,7 +69,9 @@ router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedR
       maxRent: maxRent ? parseFloat(maxRent as string) : undefined,
     };
 
-    const units = await UnitService.getLandlordUnits(req.user!.id, filters);
+    // Ensure we're using the authenticated user's ID for filtering
+    const landlordId = req.user.id;
+    const units = await UnitService.getLandlordUnits(landlordId, filters);
 
     res.json({
       success: true,

@@ -244,6 +244,7 @@ export class UnitService {
     maxRent?: number;
   }) {
     try {
+
       let query = db
         .select({
           unit: {
@@ -363,7 +364,43 @@ export class UnitService {
           .orderBy(asc(properties.name), asc(units.unitNumber));
       }
 
-      return await query;
+      const result = await query;
+      
+      // Transform the nested result to flat Unit objects with property included
+      return result.map(row => ({
+        id: row.unit.id,
+        propertyId: row.property.id,
+        unitNumber: row.unit.unitNumber,
+        bedrooms: row.unit.bedrooms,
+        bathrooms: parseFloat(row.unit.bathrooms), // Convert string to number
+        squareFeet: row.unit.squareFeet,
+        monthlyRent: parseFloat(row.unit.monthlyRent), // Convert string to number
+        deposit: parseFloat(row.unit.deposit), // Convert string to number  
+        isAvailable: row.unit.isAvailable,
+        description: row.unit.description,
+        createdAt: row.unit.createdAt,
+        updatedAt: row.unit.updatedAt,
+        property: {
+          id: row.property.id,
+          name: row.property.name,
+          address: row.property.address,
+          city: row.property.city,
+        },
+        // Include current lease and tenant info if available
+        currentLease: row.currentLease?.id ? {
+          id: row.currentLease.id,
+          status: row.currentLease.status,
+          startDate: row.currentLease.startDate,
+          endDate: row.currentLease.endDate,
+        } : undefined,
+        currentTenant: row.tenant?.id ? {
+          id: row.tenant.id,
+          firstName: row.tenant.firstName,
+          lastName: row.tenant.lastName,
+          email: row.tenant.email,
+          phone: row.tenant.phone,
+        } : undefined,
+      }));
     } catch (error) {
       console.error('Error fetching landlord units:', error);
       throw error;
