@@ -48,7 +48,7 @@ export const propertyCreationSchema = z.object({
   address: z.string().min(1, 'Address is required'),
   city: z.string().min(1, 'City is required'),
   state: z.string().min(1, 'State is required'),
-  postalCode: z.string().regex(/^\d{5}(-\d{4})?$/, 'Invalid postal code format'),
+  postalCode: z.string().optional(),
   description: z.string().optional(),
 });
 
@@ -57,7 +57,7 @@ export const propertyUpdateSchema = z.object({
   address: z.string().min(1, 'Address is required').optional(),
   city: z.string().min(1, 'City is required').optional(),
   state: z.string().min(1, 'State is required').optional(),
-  postalCode: z.string().regex(/^\d{5}(-\d{4})?$/, 'Invalid postal code format').optional(),
+  postalCode: z.string().optional(),
   description: z.string().optional(),
 });
 

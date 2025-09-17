@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { errorHandler } from './middleware/errorHandler';
 import { notFound } from './middleware/notFound';
@@ -35,6 +36,9 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// HTTP logging
+app.use(morgan('tiny'));
+
 // Health check
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -44,25 +48,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Request logging middleware
-app.use((req, res, next) => {
-  const start = Date.now();
-  const { method, url, ip } = req;
-
-  // Log the incoming request
-  console.log(`[${new Date().toISOString()}] ${method} ${url} from ${ip}`);
-
-  const originalSend = res.send;
-
-  // Override the send function to log the response
-  res.send = function (body) {
-    const duration = Date.now() - start;
-    console.log(`[${new Date().toISOString()}] ${method} ${url} - ${res.statusCode} (${duration}ms)`);
-    return originalSend.call(this, body);
-  };
-
-  next();
-});
 
 // API Routes
 app.use('/api/auth', authRoutes);

@@ -36,25 +36,7 @@ const updatePropertySchema = z.object({
 router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const { city, state } = req.query;
-
-    if (req.user!.role === 'admin') {
-      // Admin logic would go here - for now, return empty
-      return res.json({
-        success: true,
-        data: [],
-        message: 'Admin property view - to be implemented',
-      });
-    }
-
-    if (req.user!.role === 'tenant') {
-      // Tenants should not access properties directly
-      return res.status(403).json({
-        success: false,
-        error: 'Tenants cannot access property listings directly',
-      });
-    }
-
-    // Landlord logic
+    
     const filters = {
       city: city as string,
       state: state as string,

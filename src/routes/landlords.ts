@@ -18,20 +18,6 @@ const router = Router();
  * Landlord-specific workflow endpoints for enhanced property management
  */
 
-// Validation schemas
-const bulkUnitCreationSchema = z.object({
-  propertyId: z.string().uuid(),
-  units: z.array(z.object({
-    unitNumber: z.string().min(1),
-    bedrooms: z.number().int().min(0),
-    bathrooms: z.number().min(0),
-    squareFeet: z.number().int().positive().optional(),
-    monthlyRent: z.number().positive(),
-    deposit: z.number().min(0),
-    description: z.string().optional(),
-  })).min(1),
-});
-
 const financialReportSchema = z.object({
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
