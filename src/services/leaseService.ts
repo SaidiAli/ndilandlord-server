@@ -335,7 +335,7 @@ export class LeaseService {
             address: properties.address,
             city: properties.city,
             state: properties.state,
-            zipCode: properties.zipCode,
+            postalCode: properties.postalCode,
             description: properties.description,
           },
         })
@@ -504,7 +504,7 @@ export class LeaseService {
             address: properties.address,
             city: properties.city,
             state: properties.state,
-            zipCode: properties.zipCode,
+            postalCode: properties.postalCode,
             description: properties.description,
           },
           landlord: {
@@ -549,7 +549,7 @@ export class LeaseService {
               address: properties.address,
               city: properties.city,
               state: properties.state,
-              zipCode: properties.zipCode,
+              postalCode: properties.postalCode,
               description: properties.description,
             },
             landlord: {

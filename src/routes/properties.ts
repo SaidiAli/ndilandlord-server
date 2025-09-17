@@ -19,7 +19,7 @@ const createPropertySchema = z.object({
   address: z.string().min(1),
   city: z.string().min(1),
   state: z.string().min(1),
-  zipCode: z.string().regex(/^\d{5}(-\d{4})?$/),
+  postalCode: z.string().optional(),
   description: z.string().optional(),
 });
 
@@ -28,7 +28,7 @@ const updatePropertySchema = z.object({
   address: z.string().min(1).optional(),
   city: z.string().min(1).optional(),
   state: z.string().min(1).optional(),
-  zipCode: z.string().regex(/^\d{5}(-\d{4})?$/).optional(),
+  postalCode: z.string().optional(),
   description: z.string().optional(),
 });
 

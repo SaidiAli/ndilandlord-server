@@ -38,7 +38,7 @@ export interface TenantDashboardData {
     address: string;
     city: string;
     state: string;
-    zipCode: string;
+    postalCode: string;
     description?: string;
   } | null;
   payments: {
@@ -145,7 +145,7 @@ export class TenantService {
           propertyAddress: properties.address,
           propertyCity: properties.city,
           propertyState: properties.state,
-          propertyZipCode: properties.zipCode,
+          propertyPostalCode: properties.postalCode,
           propertyDescription: properties.description,
           // Landlord data
           landlordId: properties.landlordId,
@@ -195,7 +195,7 @@ export class TenantService {
           address: info.propertyAddress,
           city: info.propertyCity,
           state: info.propertyState,
-          zipCode: info.propertyZipCode,
+          postalCode: info.propertyPostalCode,
           description: info.propertyDescription,
         };
       }

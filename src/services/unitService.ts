@@ -403,7 +403,7 @@ export class UnitService {
             address: properties.address,
             city: properties.city,
             state: properties.state,
-            zipCode: properties.zipCode,
+            postalCode: properties.postalCode,
           },
         })
         .from(units)

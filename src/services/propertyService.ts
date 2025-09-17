@@ -13,7 +13,7 @@ export interface PropertyCreationData {
   address: string;
   city: string;
   state: string;
-  zipCode: string;
+  postalCode: string;
   description?: string;
 }
 
@@ -22,7 +22,7 @@ export interface PropertyUpdateData {
   address?: string;
   city?: string;
   state?: string;
-  zipCode?: string;
+  postalCode?: string;
   description?: string;
 }
 
@@ -48,7 +48,7 @@ export const propertyCreationSchema = z.object({
   address: z.string().min(1, 'Address is required'),
   city: z.string().min(1, 'City is required'),
   state: z.string().min(1, 'State is required'),
-  zipCode: z.string().regex(/^\d{5}(-\d{4})?$/, 'Invalid ZIP code format'),
+  postalCode: z.string().regex(/^\d{5}(-\d{4})?$/, 'Invalid postal code format'),
   description: z.string().optional(),
 });
 
@@ -57,7 +57,7 @@ export const propertyUpdateSchema = z.object({
   address: z.string().min(1, 'Address is required').optional(),
   city: z.string().min(1, 'City is required').optional(),
   state: z.string().min(1, 'State is required').optional(),
-  zipCode: z.string().regex(/^\d{5}(-\d{4})?$/, 'Invalid ZIP code format').optional(),
+  postalCode: z.string().regex(/^\d{5}(-\d{4})?$/, 'Invalid postal code format').optional(),
   description: z.string().optional(),
 });
 
@@ -82,7 +82,7 @@ export class PropertyService {
           address: properties.address,
           city: properties.city,
           state: properties.state,
-          zipCode: properties.zipCode,
+          postalCode: properties.postalCode,
           description: properties.description,
           landlordId: properties.landlordId,
           createdAt: properties.createdAt,
@@ -110,7 +110,7 @@ export class PropertyService {
           address: properties.address,
           city: properties.city,
           state: properties.state,
-          zipCode: properties.zipCode,
+          postalCode: properties.postalCode,
           description: properties.description,
           createdAt: properties.createdAt,
           updatedAt: properties.updatedAt,
@@ -121,7 +121,7 @@ export class PropertyService {
 
       // Apply filters if provided
       let whereConditions = [eq(properties.landlordId, landlordId)];
-      
+
       if (filters?.city) {
         whereConditions.push(eq(properties.city, filters.city));
       }
@@ -139,7 +139,7 @@ export class PropertyService {
             address: properties.address,
             city: properties.city,
             state: properties.state,
-            zipCode: properties.zipCode,
+            postalCode: properties.postalCode,
             description: properties.description,
             createdAt: properties.createdAt,
             updatedAt: properties.updatedAt,
@@ -214,7 +214,7 @@ export class PropertyService {
         })
         .from(units)
         .leftJoin(
-          leases, 
+          leases,
           and(
             eq(units.id, leases.unitId),
             eq(leases.status, 'active')
@@ -306,7 +306,7 @@ export class PropertyService {
           address: properties.address,
           city: properties.city,
           state: properties.state,
-          zipCode: properties.zipCode,
+          postalCode: properties.postalCode,
           description: properties.description,
           landlordId: properties.landlordId,
           updatedAt: properties.updatedAt,
@@ -337,7 +337,7 @@ export class PropertyService {
           address: properties.address,
           city: properties.city,
           state: properties.state,
-          zipCode: properties.zipCode,
+          postalCode: properties.postalCode,
           description: properties.description,
           landlordId: properties.landlordId,
           createdAt: properties.createdAt,
@@ -365,7 +365,7 @@ export class PropertyService {
   static async getLandlordDashboard(landlordId: string) {
     try {
       const properties = await this.getLandlordProperties(landlordId);
-      
+
       let totalUnits = 0;
       let occupiedUnits = 0;
       let totalMonthlyRevenue = 0;
@@ -463,7 +463,7 @@ export class PropertyService {
         overallMetrics: {
           averageOccupancyRate: analytics.reduce((sum, a) => sum + (a.occupancyRate || 0), 0) / analytics.length,
           totalRevenue: analytics.reduce((sum, a) => sum + (a.monthlyRevenue || 0), 0),
-          bestPerformingProperty: analytics.reduce((best, current) => 
+          bestPerformingProperty: analytics.reduce((best, current) =>
             (current.performanceScore || 0) > (best.performanceScore || 0) ? current : best, analytics[0]
           ),
           averagePerformanceScore: analytics.reduce((sum, a) => sum + (a.performanceScore || 0), 0) / analytics.length,
@@ -485,7 +485,7 @@ export class PropertyService {
     const revenueWeight = 0.4; // 40% weight for revenue potential
 
     const occupancyScore = Math.min(stats.occupancyRate || 0, 100);
-    
+
     // Revenue score based on whether units are generating expected rent
     // This is a simplified calculation - could be enhanced with market comparisons
     const expectedRevenue = stats.totalUnits * 1000; // Assume $1000 average rent
@@ -493,7 +493,7 @@ export class PropertyService {
     const revenueScore = revenueRatio * 100;
 
     const performanceScore = (occupancyScore * occupancyWeight) + (revenueScore * revenueWeight);
-    
+
     return Math.round(performanceScore * 100) / 100;
   }
 

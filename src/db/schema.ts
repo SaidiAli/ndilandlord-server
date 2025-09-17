@@ -30,7 +30,7 @@ export const properties = pgTable('properties', {
   address: text('address').notNull(),
   city: varchar('city', { length: 100 }).notNull(),
   state: varchar('state', { length: 50 }).notNull(),
-  zipCode: varchar('zip_code', { length: 10 }).notNull(),
+  postalCode: varchar('postal_code', { length: 10 }),
   description: text('description'),
   landlordId: uuid('landlord_id').references(() => users.id).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),

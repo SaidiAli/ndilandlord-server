@@ -42,7 +42,7 @@ async function seedTestData() {
       address: '123 Main Street',
       city: 'Kampala',
       state: 'Central',
-      zipCode: '12345',
+      postalCode: '12345',
       description: 'Modern apartments in city center',
       landlordId: landlord[0].id,
     }).returning();
