@@ -55,7 +55,7 @@ export class OptimizedQueries {
   static async getLandlordDashboardStats(landlordId: string): Promise<LandlordDashboardStats> {
     const now = new Date();
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    
+
     // Single complex query to get all dashboard stats
     const dashboardQuery = db
       .select({
@@ -169,7 +169,6 @@ export class OptimizedQueries {
   static async getLandlordTenantsWithDetails(landlordId: string): Promise<TenantWithFullDetails[]> {
     const tenantDetails = await db
       .select({
-        // Tenant data
         tenant: {
           id: users.id,
           userName: users.userName,
@@ -180,13 +179,9 @@ export class OptimizedQueries {
           isActive: users.isActive,
           createdAt: users.createdAt,
         },
-        // Lease data
         lease: leases,
-        // Unit data
         unit: units,
-        // Property data
         property: properties,
-        // Payment summary
         totalPaid: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'completed' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('total_paid'),
         lastPaymentDate: sql<string>`MAX(CASE WHEN ${payments.status} = 'completed' THEN ${payments.paidDate} END)`.as('last_payment_date'),
         overdueAmount: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'pending' AND ${payments.dueDate} < NOW() - INTERVAL '5 days' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('overdue_amount'),
