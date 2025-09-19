@@ -85,8 +85,6 @@ export const leases = pgTable('leases', {
   unitIdIdx: index('idx_leases_unit_id').on(table.unitId),
   // Index for lease status queries
   statusIdx: index('idx_leases_status').on(table.status),
-  // Unique constraint: Only one active lease per unit at a time
-  uniqueActiveLeasePerUnit: unique('unique_active_lease_per_unit').on(table.unitId, table.status),
   // Index for date range queries
   dateRangeIdx: index('idx_leases_date_range').on(table.startDate, table.endDate),
 }));

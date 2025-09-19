@@ -1,6 +1,6 @@
 import { db } from '../db';
 import { users, properties, units, leases, payments } from '../db/schema';
-import { eq, and, desc, asc } from 'drizzle-orm';
+import { eq, and, or, desc, asc } from 'drizzle-orm';
 import { z } from 'zod';
 import { OwnershipService } from '../db/ownership';
 
@@ -41,30 +41,72 @@ export interface LeaseAssignmentData {
 export const leaseCreationSchema = z.object({
   unitId: z.string().uuid('Invalid unit ID'),
   tenantId: z.string().uuid('Invalid tenant ID'),
-  startDate: z.string().datetime('Invalid start date'),
-  endDate: z.string().datetime('Invalid end date'),
+  startDate: z.string().refine((val) => {
+    const date = new Date(val);
+    return !isNaN(date.getTime()) && val.length >= 10;
+  }, { message: "Invalid start date format" }),
+  endDate: z.string().refine((val) => {
+    const date = new Date(val);
+    return !isNaN(date.getTime()) && val.length >= 10;
+  }, { message: "Invalid end date format" }),
   monthlyRent: z.number().positive('Monthly rent must be positive'),
   deposit: z.number().min(0, 'Deposit cannot be negative'),
   terms: z.string().optional(),
+}).refine((data) => {
+  const startDate = new Date(data.startDate);
+  const endDate = new Date(data.endDate);
+  return endDate > startDate;
+}, {
+  message: 'End date must be after start date',
+  path: ['endDate'],
 });
 
 export const leaseUpdateSchema = z.object({
-  startDate: z.string().datetime('Invalid start date').optional(),
-  endDate: z.string().datetime('Invalid end date').optional(),
+  startDate: z.string().refine((val) => {
+    const date = new Date(val);
+    return !isNaN(date.getTime()) && val.length >= 10;
+  }, { message: "Invalid start date format" }).optional(),
+  endDate: z.string().refine((val) => {
+    const date = new Date(val);
+    return !isNaN(date.getTime()) && val.length >= 10;
+  }, { message: "Invalid end date format" }).optional(),
   monthlyRent: z.number().positive('Monthly rent must be positive').optional(),
   deposit: z.number().min(0, 'Deposit cannot be negative').optional(),
   status: z.enum(['draft', 'active', 'expired', 'terminated']).optional(),
   terms: z.string().optional(),
+}).refine((data) => {
+  if (data.startDate && data.endDate) {
+    const startDate = new Date(data.startDate);
+    const endDate = new Date(data.endDate);
+    return endDate > startDate;
+  }
+  return true;
+}, {
+  message: 'End date must be after start date',
+  path: ['endDate'],
 });
 
 export const leaseAssignmentSchema = z.object({
   tenantId: z.string().uuid('Invalid tenant ID'),
   unitId: z.string().uuid('Invalid unit ID'),
-  startDate: z.string().datetime('Invalid start date'),
-  endDate: z.string().datetime('Invalid end date'),
+  startDate: z.string().refine((val) => {
+    const date = new Date(val);
+    return !isNaN(date.getTime()) && val.length >= 10;
+  }, { message: "Invalid start date format" }),
+  endDate: z.string().refine((val) => {
+    const date = new Date(val);
+    return !isNaN(date.getTime()) && val.length >= 10;
+  }, { message: "Invalid end date format" }),
   monthlyRent: z.number().positive('Monthly rent must be positive'),
   deposit: z.number().min(0, 'Deposit cannot be negative'),
   terms: z.string().optional(),
+}).refine((data) => {
+  const startDate = new Date(data.startDate);
+  const endDate = new Date(data.endDate);
+  return endDate > startDate;
+}, {
+  message: 'End date must be after start date',
+  path: ['endDate'],
 });
 
 export class LeaseService {
@@ -97,20 +139,40 @@ export class LeaseService {
       //   throw new Error('You can only create leases for your own tenants');
       // }
 
-      // Check if unit already has an active lease
-      const existingActiveLease = await db
+      // Check for overlapping leases (active or draft leases only)
+      const overlappingLeases = await db
         .select()
         .from(leases)
         .where(
           and(
             eq(leases.unitId, validatedData.unitId),
-            eq(leases.status, 'active')
+            // Check for active or draft leases that might overlap
+            or(
+              eq(leases.status, 'active'),
+              eq(leases.status, 'draft')
+            )
           )
-        )
-        .limit(1);
+        );
 
-      if (existingActiveLease.length > 0) {
-        throw new Error('Unit already has an active lease');
+      // Check for date range overlaps
+      const newStartDate = new Date(validatedData.startDate);
+      const newEndDate = new Date(validatedData.endDate);
+
+      for (const existingLease of overlappingLeases) {
+        const existingStartDate = new Date(existingLease.startDate);
+        const existingEndDate = new Date(existingLease.endDate);
+
+        // Check if date ranges overlap
+        const hasOverlap = (
+          newStartDate < existingEndDate && 
+          newEndDate > existingStartDate
+        );
+
+        if (hasOverlap) {
+          throw new Error(
+            `Lease period overlaps with existing ${existingLease.status} lease (${existingStartDate.toLocaleDateString()} - ${existingEndDate.toLocaleDateString()})`
+          );
+        }
       }
 
       // Create the lease
@@ -160,11 +222,8 @@ export class LeaseService {
       // Create lease using existing tenant
       const lease = await this.createLease(landlordId, validatedData);
 
-      // Mark unit as unavailable
-      await db
-        .update(units)
-        .set({ isAvailable: false, updatedAt: new Date() })
-        .where(eq(units.id, validatedData.unitId));
+      // Note: Unit availability will be updated when lease status changes to 'active'
+      // via the handleLeaseStatusTransition method
 
       return lease;
     } catch (error) {

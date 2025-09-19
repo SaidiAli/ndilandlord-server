@@ -17,30 +17,72 @@ const router = Router();
 const createLeaseSchema = z.object({
   unitId: z.string().uuid(),
   tenantId: z.string().uuid(),
-  startDate: z.string().datetime(),
-  endDate: z.string().datetime(),
+  startDate: z.string().refine((val) => {
+    const date = new Date(val);
+    return !isNaN(date.getTime()) && val.length >= 10;
+  }, { message: "Invalid start date format" }),
+  endDate: z.string().refine((val) => {
+    const date = new Date(val);
+    return !isNaN(date.getTime()) && val.length >= 10;
+  }, { message: "Invalid end date format" }),
   monthlyRent: z.number().positive(),
   deposit: z.number().min(0),
   terms: z.string().optional(),
+}).refine((data) => {
+  const startDate = new Date(data.startDate);
+  const endDate = new Date(data.endDate);
+  return endDate > startDate;
+}, {
+  message: 'End date must be after start date',
+  path: ['endDate'],
 });
 
 const assignLeaseSchema = z.object({
   tenantId: z.string().uuid(),
   unitId: z.string().uuid(),
-  startDate: z.string().datetime(),
-  endDate: z.string().datetime(),
+  startDate: z.string().refine((val) => {
+    const date = new Date(val);
+    return !isNaN(date.getTime()) && val.length >= 10;
+  }, { message: "Invalid start date format" }),
+  endDate: z.string().refine((val) => {
+    const date = new Date(val);
+    return !isNaN(date.getTime()) && val.length >= 10;
+  }, { message: "Invalid end date format" }),
   monthlyRent: z.number().positive(),
   deposit: z.number().min(0),
   terms: z.string().optional(),
+}).refine((data) => {
+  const startDate = new Date(data.startDate);
+  const endDate = new Date(data.endDate);
+  return endDate > startDate;
+}, {
+  message: 'End date must be after start date',
+  path: ['endDate'],
 });
 
 const updateLeaseSchema = z.object({
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
+  startDate: z.string().refine((val) => {
+    const date = new Date(val);
+    return !isNaN(date.getTime()) && val.length >= 10;
+  }, { message: "Invalid start date format" }).optional(),
+  endDate: z.string().refine((val) => {
+    const date = new Date(val);
+    return !isNaN(date.getTime()) && val.length >= 10;
+  }, { message: "Invalid end date format" }).optional(),
   monthlyRent: z.number().positive().optional(),
   deposit: z.number().min(0).optional(),
   status: z.enum(['draft', 'active', 'expired', 'terminated']).optional(),
   terms: z.string().optional(),
+}).refine((data) => {
+  if (data.startDate && data.endDate) {
+    const startDate = new Date(data.startDate);
+    const endDate = new Date(data.endDate);
+    return endDate > startDate;
+  }
+  return true;
+}, {
+  message: 'End date must be after start date',
+  path: ['endDate'],
 });
 
 // Get all leases (filtered by role)
