@@ -111,7 +111,7 @@ router.get('/analytics', authenticate, requireLandlordContext(), async (req: Aut
   }
 });
 
-// Get property details with stats (landlords only)
+// Get property details with stats
 router.get('/:id/details', authenticate, requireResourceOwnership('property', 'id', 'read'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const propertyDetails = await PropertyService.getPropertyDetails(req.user!.id, req.params.id);
