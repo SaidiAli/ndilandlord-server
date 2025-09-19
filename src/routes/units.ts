@@ -187,7 +187,7 @@ router.get('/:id/details', authenticate, requireResourceOwnership('unit', 'id', 
 router.get('/:id', authenticate, requireResourceOwnership('unit', 'id', 'read'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const units = await UnitService.getLandlordUnits(req.user!.id);
-    const unit = units.find(u => u.unit.id === req.params.id);
+    const unit = units.find(u => u.id === req.params.id);
 
     if (!unit) {
       return res.status(404).json({

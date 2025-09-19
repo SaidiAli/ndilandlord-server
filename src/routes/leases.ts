@@ -58,15 +58,6 @@ router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedR
       });
     }
 
-    if (req.user!.role === 'admin') {
-      // Admin logic would go here - for now, return empty
-      return res.json({
-        success: true,
-        data: [],
-        message: 'Admin lease view - to be implemented',
-      });
-    }
-
     // Landlord logic
     const filters = {
       status: status as string,
