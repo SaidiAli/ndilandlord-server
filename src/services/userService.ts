@@ -4,6 +4,7 @@ import { eq, and } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { OwnershipService } from '../db/ownership';
+import { OptimizedQueries } from './optimizedQueries';
 
 /**
  * User service for landlord-tenant management in the new workflow
@@ -222,11 +223,11 @@ export class UserService {
   }
 
   /**
-   * Get all tenants for a specific landlord
+   * Get all tenants for a specific landlord with complete details
    */
   static async getLandlordTenants(landlordId: string) {
     try {
-      return await OwnershipService.getLandlordTenants(landlordId);
+      return await OptimizedQueries.getLandlordTenantsWithDetails(landlordId);
     } catch (error) {
       console.error('Error fetching landlord tenants:', error);
       throw error;

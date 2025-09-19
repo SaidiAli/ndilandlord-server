@@ -199,7 +199,6 @@ export class OptimizedQueries {
       .where(
         and(
           eq(properties.landlordId, landlordId),
-          eq(leases.status, 'active'),
           eq(users.role, 'tenant')
         )
       )
