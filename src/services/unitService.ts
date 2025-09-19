@@ -177,7 +177,7 @@ export class UnitService {
       // Check for duplicate unit numbers within the request and existing units
       const unitNumbers = validatedData.units.map(u => u.unitNumber);
       const duplicatesInRequest = unitNumbers.filter((item, index) => unitNumbers.indexOf(item) !== index);
-      
+
       if (duplicatesInRequest.length > 0) {
         throw new Error(`Duplicate unit numbers in request: ${duplicatesInRequest.join(', ')}`);
       }
@@ -295,7 +295,7 @@ export class UnitService {
 
       // Apply filters if provided
       let whereConditions = [eq(properties.landlordId, landlordId)];
-      
+
       if (filters?.propertyId) {
         whereConditions.push(eq(properties.id, filters.propertyId));
       }
@@ -353,7 +353,7 @@ export class UnitService {
           .from(units)
           .innerJoin(properties, eq(units.propertyId, properties.id))
           .leftJoin(
-            leases, 
+            leases,
             and(
               eq(units.id, leases.unitId),
               eq(leases.status, 'active')
@@ -365,7 +365,7 @@ export class UnitService {
       }
 
       const result = await query;
-      
+
       // Transform the nested result to flat Unit objects with property included
       return result.map(row => ({
         id: row.unit.id,
@@ -639,31 +639,31 @@ export class UnitService {
       // Revenue calculations
       const totalMonthlyRevenue = allUnits
         .filter(u => u.currentLease?.id)
-        .reduce((sum, u) => sum + parseFloat(u.unit.monthlyRent), 0);
+        .reduce((sum, u) => sum + u.monthlyRent, 0);
 
       const potentialMonthlyRevenue = allUnits
-        .reduce((sum, u) => sum + parseFloat(u.unit.monthlyRent), 0);
+        .reduce((sum, u) => sum + u.monthlyRent, 0);
 
-      const revenueEfficiency = potentialMonthlyRevenue > 0 
-        ? (totalMonthlyRevenue / potentialMonthlyRevenue) * 100 
+      const revenueEfficiency = potentialMonthlyRevenue > 0
+        ? (totalMonthlyRevenue / potentialMonthlyRevenue) * 100
         : 0;
 
       // Unit type distribution
       const unitsByBedrooms = allUnits.reduce((acc, unit) => {
-        const bedrooms = unit.unit.bedrooms;
+        const bedrooms = unit.bedrooms;
         acc[bedrooms] = (acc[bedrooms] || 0) + 1;
         return acc;
       }, {} as Record<number, number>);
 
       // Top performing units (by rent)
       const topPerformingUnits = allUnits
-        .sort((a, b) => parseFloat(b.unit.monthlyRent) - parseFloat(a.unit.monthlyRent))
+        .sort((a, b) => b.monthlyRent - a.monthlyRent)
         .slice(0, 5)
         .map(u => ({
-          unitId: u.unit.id,
-          unitNumber: u.unit.unitNumber,
+          unitId: u.id,
+          unitNumber: u.unitNumber,
           propertyName: u.property.name,
-          monthlyRent: parseFloat(u.unit.monthlyRent),
+          monthlyRent: u.monthlyRent,
           isOccupied: !!u.currentLease?.id,
         }));
 
@@ -677,8 +677,8 @@ export class UnitService {
         revenueEfficiency: Math.round(revenueEfficiency * 100) / 100,
         unitsByBedrooms,
         topPerformingUnits,
-        averageRent: totalUnits > 0 
-          ? allUnits.reduce((sum, u) => sum + parseFloat(u.unit.monthlyRent), 0) / totalUnits 
+        averageRent: totalUnits > 0
+          ? allUnits.reduce((sum, u) => sum + u.monthlyRent, 0) / totalUnits
           : 0,
       };
     } catch (error) {
@@ -705,7 +705,7 @@ export class UnitService {
             const endDate = new Date(lease.endDate);
             const daysOccupied = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
             const monthlyRent = parseFloat(lease.monthlyRent);
-            
+
             totalDaysOccupied += daysOccupied;
             totalRevenue += (daysOccupied / 30) * monthlyRent; // Approximate monthly to daily
           }
@@ -718,12 +718,12 @@ export class UnitService {
         totalDaysVacant = Math.max(0, totalDaysSinceCreation - totalDaysOccupied);
       }
 
-      const occupancyRate = totalDaysOccupied > 0 
-        ? (totalDaysOccupied / (totalDaysOccupied + totalDaysVacant)) * 100 
+      const occupancyRate = totalDaysOccupied > 0
+        ? (totalDaysOccupied / (totalDaysOccupied + totalDaysVacant)) * 100
         : 0;
 
-      const averageLeaseLength = totalLeases > 0 
-        ? totalDaysOccupied / totalLeases 
+      const averageLeaseLength = totalLeases > 0
+        ? totalDaysOccupied / totalLeases
         : 0;
 
       return {
