@@ -309,6 +309,7 @@ export class TenantService {
         } : null,
         property: propertyData ? {
           ...propertyData,
+          postalCode: propertyData.postalCode || '',
           description: propertyData.description || undefined,
         } : null,
         payments: paymentInfo,

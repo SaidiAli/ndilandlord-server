@@ -37,9 +37,11 @@ export interface PropertyWithFullDetails {
 
 export interface TenantWithFullDetails {
   tenant: any;
-  lease: any;
-  unit: any;
-  property: any;
+  leases: Array<{
+    lease: any;
+    unit: any;
+    property: any;
+  }>;
   paymentSummary: {
     totalPaid: number;
     outstandingBalance: number;
@@ -167,9 +169,29 @@ export class OptimizedQueries {
    * Get all tenants for a landlord with complete details in optimized query
    */
   static async getLandlordTenantsWithDetails(landlordId: string): Promise<TenantWithFullDetails[]> {
-    const tenantDetails = await db
-      .select({
-        tenant: {
+    // First, get all unique tenants for this landlord
+    const tenantIds = await db
+      .selectDistinct({
+        tenantId: users.id,
+      })
+      .from(users)
+      .innerJoin(leases, eq(users.id, leases.tenantId))
+      .innerJoin(units, eq(leases.unitId, units.id))
+      .innerJoin(properties, eq(units.propertyId, properties.id))
+      .where(
+        and(
+          eq(properties.landlordId, landlordId),
+          eq(users.role, 'tenant')
+        )
+      );
+
+    const results: TenantWithFullDetails[] = [];
+
+    // For each tenant, get their complete details with all leases
+    for (const { tenantId } of tenantIds) {
+      // Get tenant basic info
+      const tenantInfo = await db
+        .select({
           id: users.id,
           userName: users.userName,
           firstName: users.firstName,
@@ -178,40 +200,73 @@ export class OptimizedQueries {
           phone: users.phone,
           isActive: users.isActive,
           createdAt: users.createdAt,
-        },
-        lease: leases,
-        unit: units,
-        property: properties,
-        totalPaid: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'completed' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('total_paid'),
-        lastPaymentDate: sql<string>`MAX(CASE WHEN ${payments.status} = 'completed' THEN ${payments.paidDate} END)`.as('last_payment_date'),
-        overdueAmount: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'pending' AND ${payments.dueDate} < NOW() - INTERVAL '5 days' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('overdue_amount'),
-      })
-      .from(users)
-      .innerJoin(leases, eq(users.id, leases.tenantId))
-      .innerJoin(units, eq(leases.unitId, units.id))
-      .innerJoin(properties, eq(units.propertyId, properties.id))
-      .leftJoin(payments, eq(leases.id, payments.leaseId))
-      .where(
-        and(
-          eq(properties.landlordId, landlordId),
-          eq(users.role, 'tenant')
-        )
-      )
-      .groupBy(users.id, leases.id, units.id, properties.id)
-      .orderBy(asc(users.firstName), asc(users.lastName));
+        })
+        .from(users)
+        .where(eq(users.id, tenantId))
+        .limit(1);
 
-    return tenantDetails.map(row => ({
-      tenant: row.tenant,
-      lease: row.lease,
-      unit: row.unit,
-      property: row.property,
-      paymentSummary: {
-        totalPaid: Number(row.totalPaid) || 0,
-        outstandingBalance: Number(row.overdueAmount) || 0,
-        lastPaymentDate: row.lastPaymentDate || undefined,
-        paymentStatus: Number(row.overdueAmount) > 0 ? 'overdue' : 'current',
-      },
-    }));
+      if (tenantInfo.length === 0) continue;
+
+      // Get all leases for this tenant under this landlord
+      const tenantLeases = await db
+        .select({
+          lease: leases,
+          unit: units,
+          property: properties,
+        })
+        .from(leases)
+        .innerJoin(units, eq(leases.unitId, units.id))
+        .innerJoin(properties, eq(units.propertyId, properties.id))
+        .where(
+          and(
+            eq(leases.tenantId, tenantId),
+            eq(properties.landlordId, landlordId)
+          )
+        )
+        .orderBy(desc(leases.createdAt));
+
+      // Get payment summary across all leases for this tenant
+      const paymentSummary = await db
+        .select({
+          totalPaid: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'completed' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('total_paid'),
+          lastPaymentDate: sql<string>`MAX(CASE WHEN ${payments.status} = 'completed' THEN ${payments.paidDate} END)`.as('last_payment_date'),
+          overdueAmount: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'pending' AND ${payments.dueDate} < NOW() - INTERVAL '5 days' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('overdue_amount'),
+        })
+        .from(payments)
+        .innerJoin(leases, eq(payments.leaseId, leases.id))
+        .innerJoin(units, eq(leases.unitId, units.id))
+        .innerJoin(properties, eq(units.propertyId, properties.id))
+        .where(
+          and(
+            eq(leases.tenantId, tenantId),
+            eq(properties.landlordId, landlordId)
+          )
+        );
+
+      const summary = paymentSummary[0];
+
+      results.push({
+        tenant: tenantInfo[0],
+        leases: tenantLeases.map(row => ({
+          lease: row.lease,
+          unit: row.unit,
+          property: row.property,
+        })),
+        paymentSummary: {
+          totalPaid: Number(summary?.totalPaid) || 0,
+          outstandingBalance: Number(summary?.overdueAmount) || 0,
+          lastPaymentDate: summary?.lastPaymentDate || undefined,
+          paymentStatus: Number(summary?.overdueAmount) > 0 ? 'overdue' : 'current',
+        },
+      });
+    }
+
+    // Sort results by tenant name
+    return results.sort((a, b) => {
+      const nameA = `${a.tenant.firstName} ${a.tenant.lastName}`.toLowerCase();
+      const nameB = `${b.tenant.firstName} ${b.tenant.lastName}`.toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
   }
 
   /**
