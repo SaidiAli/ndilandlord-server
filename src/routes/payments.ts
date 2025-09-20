@@ -385,6 +385,7 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
     // Validate request body
     const validationResult = paymentInitiationSchema.safeParse(req.body);
     if (!validationResult.success) {
+      console.log(validationResult.error.errors)
       return res.status(400).json({
         success: false,
         error: 'Invalid request data',
@@ -396,6 +397,7 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
 
     // Validate payment amount against lease balance
     const validation = await PaymentService.validatePayment(leaseId, amount);
+    console.log(validation)
     if (!validation.isValid) {
       return res.status(400).json({
         success: false,
