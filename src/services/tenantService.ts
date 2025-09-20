@@ -335,13 +335,9 @@ export class TenantService {
       // Get current active lease with full details
       const leaseInfo = await db
         .select({
-          // Full lease data
           lease: leases,
-          // Unit data
-          unit: units,
-          // Property data  
+          unit: units, 
           property: properties,
-          // Landlord ID for fetching landlord info
           landlordId: properties.landlordId,
         })
         .from(leases)
