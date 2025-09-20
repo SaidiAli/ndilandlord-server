@@ -55,7 +55,7 @@ export class OwnershipService {
   /**
    * Get the landlord for a specific tenant based on their active lease
    */
-  static async getTenantLandlord(tenantId: string): Promise<string | null> {
+  static async getTenantLandlord(tenantId: string, isLandlord: boolean = false): Promise<string | null> {
     if (!this.isValidUUID(tenantId)) {
       return null;
     }
@@ -69,7 +69,7 @@ export class OwnershipService {
       .where(
         and(
           eq(leases.tenantId, tenantId),
-          eq(leases.status, 'active')
+          !isLandlord ? eq(leases.status, 'active') : undefined
         )
       )
       .limit(1);
@@ -318,7 +318,7 @@ export class OwnershipService {
           .innerJoin(properties, eq(units.propertyId, properties.id))
           .where(eq(leases.id, resourceId))
           .limit(1);
-        
+
         return leaseChain.length > 0 ? leaseChain[0] : null;
 
       case 'payment':
@@ -336,7 +336,7 @@ export class OwnershipService {
           .innerJoin(properties, eq(units.propertyId, properties.id))
           .where(eq(payments.id, resourceId))
           .limit(1);
-        
+
         return paymentChain.length > 0 ? paymentChain[0] : null;
 
       default:
