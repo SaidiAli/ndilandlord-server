@@ -1,6 +1,6 @@
 import { db } from '../db';
 import { paymentSchedules, leases } from '../db/schema';
-import { and, eq, lte } from 'drizzle-orm';
+import { and, eq, lte, asc } from 'drizzle-orm';
 
 export class PaymentScheduleService {
     /**
@@ -55,7 +55,7 @@ export class PaymentScheduleService {
     }
 
     /**
-     * Calculate payment periods for a lease
+     * Calculate payment periods for a lease, including proration for the first and last months.
      */
     private static calculatePaymentPeriods(
         leaseStart: Date,
@@ -93,7 +93,7 @@ export class PaymentScheduleService {
 
             // Proration for the first month
             if (current.getTime() === leaseStart.getTime() && leaseStart.getDate() !== 1) {
-                 const daysInMonth = this.getDaysInMonth(year, month);
+                const daysInMonth = this.getDaysInMonth(year, month);
                 const daysInPeriod = daysInMonth - leaseStart.getDate() + 1;
                 amount = (monthlyRent / daysInMonth) * daysInPeriod;
             }
@@ -108,10 +108,9 @@ export class PaymentScheduleService {
                 }
             }
 
-
-            const dueDate = new Date(year, month, paymentDay);
-             if(dueDate < periodStart){
-                dueDate.setMonth(dueDate.getMonth() + 1)
+            let dueDate = new Date(year, month, paymentDay);
+            if (dueDate < periodStart) {
+                dueDate.setMonth(dueDate.getMonth() + 1);
             }
 
 
@@ -200,7 +199,6 @@ export class PaymentScheduleService {
             return 'upcoming';
         }
 
-        // Give 5 days grace period before marking as overdue
         const gracePeriodEnd = new Date(dueDate);
         gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 5);
 
@@ -225,7 +223,7 @@ export class PaymentScheduleService {
                         eq(paymentSchedules.isPaid, false)
                     )
                 )
-                .orderBy(paymentSchedules.paymentNumber)
+                .orderBy(asc(paymentSchedules.paymentNumber))
                 .limit(1);
 
             return nextPayment || null;
@@ -242,7 +240,7 @@ export class PaymentScheduleService {
         try {
             const now = new Date();
             const fiveDaysAgo = new Date();
-            fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+            fiveDaysAgo.setDate(now.getDate() - 5);
 
             const overduePayments = await db
                 .select()
@@ -254,7 +252,7 @@ export class PaymentScheduleService {
                         lte(paymentSchedules.dueDate, fiveDaysAgo)
                     )
                 )
-                .orderBy(paymentSchedules.paymentNumber);
+                .orderBy(asc(paymentSchedules.paymentNumber));
 
             return overduePayments.map(p => ({
                 ...p,

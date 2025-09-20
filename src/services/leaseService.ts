@@ -1,6 +1,6 @@
 import { db } from '../db';
 import { users, properties, units, leases, payments } from '../db/schema';
-import { eq, and, or, desc, asc } from 'drizzle-orm';
+import { eq, and, or, desc, asc, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { OwnershipService } from '../db/ownership';
 import { PaymentScheduleService } from './paymentScheduleService';
@@ -16,6 +16,7 @@ export interface LeaseCreationData {
   startDate: string;
   endDate: string;
   monthlyRent: number;
+  paymentDay?: number;
   deposit: number;
   terms?: string;
 }
@@ -24,6 +25,7 @@ export interface LeaseUpdateData {
   startDate?: string;
   endDate?: string;
   monthlyRent?: number;
+  paymentDay?: number;
   deposit?: number;
   status?: 'draft' | 'active' | 'expired' | 'terminated';
   terms?: string;
@@ -37,6 +39,12 @@ export interface LeaseAssignmentData {
   monthlyRent: number;
   deposit: number;
   terms?: string;
+}
+
+export interface LeaseRenewalData {
+  newEndDate: string;
+  newMonthlyRent?: number;
+  newTerms?: string;
 }
 
 // Validation schemas
@@ -112,6 +120,12 @@ export const leaseAssignmentSchema = z.object({
 }, {
   message: 'End date must be after start date',
   path: ['endDate'],
+});
+
+export const leaseRenewalSchema = z.object({
+  newEndDate: z.string().datetime({ message: "Invalid new end date format" }),
+  newMonthlyRent: z.number().positive('Monthly rent must be positive').optional(),
+  newTerms: z.string().optional(),
 });
 
 export class LeaseService {
@@ -655,84 +669,89 @@ export class LeaseService {
    */
   static async activateLease(landlordId: string, leaseId: string) {
     try {
-      // Verify ownership
       const ownsLease = await OwnershipService.isLandlordOwnerOfLease(landlordId, leaseId);
       if (!ownsLease) {
         throw new Error('You can only activate your own leases');
       }
 
-      // Get lease details
-      const [lease] = await db
-        .select()
-        .from(leases)
-        .where(eq(leases.id, leaseId))
-        .limit(1);
+      const [lease] = await db.select().from(leases).where(eq(leases.id, leaseId)).limit(1);
+      if (!lease) throw new Error('Lease not found');
+      if (lease.status !== 'draft') throw new Error('Only draft leases can be activated');
 
-      if (!lease) {
-        throw new Error('Lease not found');
-      }
-
-      if (lease.status !== 'draft') {
-        throw new Error('Only draft leases can be activated');
-      }
-
-      // Use transaction for atomic operation
       await db.transaction(async (tx) => {
-        // Update lease status
-        await tx
-          .update(leases)
-          .set({
-            status: 'active',
-            updatedAt: new Date(),
-          })
-          .where(eq(leases.id, leaseId));
-
-        // Mark unit as unavailable
-        await tx
-          .update(units)
-          .set({
-            isAvailable: false,
-            updatedAt: new Date(),
-          })
-          .where(eq(units.id, lease.unitId));
+        await tx.update(leases).set({ status: 'active', updatedAt: new Date() }).where(eq(leases.id, leaseId));
+        await tx.update(units).set({ isAvailable: false, updatedAt: new Date() }).where(eq(units.id, lease.unitId));
       });
 
-      // Generate payment schedule (outside transaction for now)
+      // Generate the payment schedule upon activation
       await PaymentScheduleService.generatePaymentSchedule(leaseId);
 
-      return await this.getLeaseDetails(landlordId, leaseId);
+      return await this.getLeaseWithSchedule(landlordId, leaseId);
     } catch (error) {
       console.error('Error activating lease:', error);
       throw error;
     }
   }
 
+  static async renewLease(landlordId: string, leaseId: string, renewalData: LeaseRenewalData) {
+    try {
+        const validatedData = leaseRenewalSchema.parse(renewalData);
+        const ownsLease = await OwnershipService.isLandlordOwnerOfLease(landlordId, leaseId);
+        if (!ownsLease) {
+            throw new Error('You can only renew your own leases');
+        }
+
+        const [originalLease] = await db.select().from(leases).where(eq(leases.id, leaseId)).limit(1);
+        if (!originalLease) throw new Error('Lease not found');
+        if (!['active', 'expiring'].includes(originalLease.status)) {
+            throw new Error('Only active or expiring leases can be renewed');
+        }
+        
+        const newStartDate = new Date(originalLease.endDate);
+        newStartDate.setDate(newStartDate.getDate() + 1);
+
+        const newLeaseData: LeaseCreationData = {
+            unitId: originalLease.unitId,
+            tenantId: originalLease.tenantId,
+            startDate: newStartDate.toISOString(),
+            endDate: validatedData.newEndDate,
+            monthlyRent: validatedData.newMonthlyRent || parseFloat(originalLease.monthlyRent),
+            deposit: parseFloat(originalLease.deposit),
+            paymentDay: originalLease.paymentDay,
+            terms: validatedData.newTerms || originalLease.terms || undefined,
+        };
+
+        const newLeaseResult = await this.createLease(landlordId, newLeaseData);
+        const newLeaseId = newLeaseResult!.lease.id;
+        
+        await db.update(leases).set({ previousLeaseId: originalLease.id }).where(eq(leases.id, newLeaseId));
+        
+        return newLeaseResult;
+    } catch (error) {
+        console.error('Error renewing lease:', error);
+        throw error;
+    }
+}
+
   /**
  * Get lease with payment schedule
  */
   static async getLeaseWithSchedule(landlordId: string, leaseId: string) {
     try {
-      // Get lease details
       const leaseDetails = await this.getLeaseDetails(landlordId, leaseId);
-      if (!leaseDetails) {
-        throw new Error('Lease not found');
-      }
+      if (!leaseDetails) throw new Error('Lease not found or not accessible');
 
-      // Get payment schedule
       const schedule = await PaymentScheduleService.getLeasePaymentSchedule(leaseId);
-
-      // Calculate totals
       const totalScheduled = schedule.reduce((sum, s) => sum + s.amount, 0);
-      const totalPaid = schedule
-        .filter(s => s.isPaid)
-        .reduce((sum, s) => sum + s.amount, 0);
+      const totalPaid = schedule.filter(s => s.isPaid).reduce((sum, s) => sum + s.amount, 0);
       const currentBalance = totalScheduled - totalPaid;
-
-      // Get next payment due
       const nextPaymentDue = await PaymentScheduleService.getNextPaymentDue(leaseId);
 
       return {
-        lease: leaseDetails,
+        lease: leaseDetails.lease,
+        unit: leaseDetails.unit,
+        property: leaseDetails.property,
+        tenant: leaseDetails.tenant,
         paymentSchedule: schedule,
         totalScheduledAmount: totalScheduled,
         totalPaidAmount: totalPaid,
@@ -751,40 +770,15 @@ export class LeaseService {
    */
   static async terminateLease(landlordId: string, leaseId: string) {
     try {
+        const ownsLease = await OwnershipService.isLandlordOwnerOfLease(landlordId, leaseId);
+        if (!ownsLease) {
+            throw new Error('You can only terminate your own leases');
+        }
+
       await db.transaction(async (tx) => {
-        // Update lease status
-        await tx
-          .update(leases)
-          .set({
-            status: 'terminated',
-            updatedAt: new Date(),
-          })
-          .where(eq(leases.id, leaseId));
-
-
         const [lease] = await tx.select().from(leases).where(eq(leases.id, leaseId));
-
-        // Mark unit as available
-        await tx
-          .update(units)
-          .set({
-            isAvailable: true,
-            updatedAt: new Date(),
-          })
-          .where(eq(units.id, lease.unitId));
-
-        // Mark all unpaid schedules as cancelled (optional)
-        await tx
-          .update(paymentSchedules)
-          .set({
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(paymentSchedules.leaseId, leaseId),
-              eq(paymentSchedules.isPaid, false)
-            )
-          );
+        await tx.update(leases).set({ status: 'terminated', updatedAt: new Date() }).where(eq(leases.id, leaseId));
+        await tx.update(units).set({ isAvailable: true, updatedAt: new Date() }).where(eq(units.id, lease.unitId));
       });
 
       return await this.getLeaseDetails(landlordId, leaseId);
@@ -792,6 +786,41 @@ export class LeaseService {
       console.error('Error terminating lease:', error);
       throw error;
     }
+  }
+
+  /**
+   * NEW METHOD: Automated job to update lease statuses.
+   */
+  static async updateLeaseStatuses() {
+      try {
+          const now = new Date();
+          const thirtyDaysFromNow = new Date();
+          thirtyDaysFromNow.setDate(now.getDate() + 30);
+
+          // Mark active leases as expiring 30 days before end date
+          await db.update(leases).set({ status: 'expiring' }).where(and(
+              eq(leases.status, 'active'),
+              lte(leases.endDate, thirtyDaysFromNow)
+          ));
+
+          // Mark expired leases after their end date
+          const expiredLeasesResult = await db.update(leases).set({ status: 'expired' }).where(and(
+              or(eq(leases.status, 'active'), eq(leases.status, 'expiring')),
+              lte(leases.endDate, now)
+          )).returning({ unitId: leases.unitId });
+          
+          // Make units available for expired leases
+          if (expiredLeasesResult.length > 0) {
+              const unitIds = expiredLeasesResult.map(l => l.unitId);
+              // Make unit available only if there isn't another active/draft lease for it
+              await db.update(units).set({ isAvailable: true }).where(sql`${units.id} IN ${unitIds} AND NOT EXISTS (
+                  SELECT 1 FROM ${leases} l2 WHERE l2.unit_id = ${units.id} AND l2.status IN ('active', 'draft')
+              )`);
+          }
+
+      } catch (error) {
+          console.error('Error in updateLeaseStatuses job:', error);
+      }
   }
 
   /**

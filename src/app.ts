@@ -13,7 +13,8 @@ import leaseRoutes from './routes/leases';
 import paymentRoutes from './routes/payments';
 import landlordRoutes from './routes/landlords';
 import tenantRoutes from './routes/tenant';
-// import maintenanceRoutes from './routes/maintenance';
+import { LeaseJobs } from './jobs/leaseJobs';
+import './jobs/worker';
 
 dotenv.config();
 
@@ -58,7 +59,6 @@ app.use('/api/leases', leaseRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/landlords', landlordRoutes);
 app.use('/api/tenant', tenantRoutes);
-// app.use('/api/maintenance', maintenanceRoutes); // Post-MVP
 
 // Error handling middleware
 app.use(notFound);
@@ -67,6 +67,9 @@ app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
+
+  // Schedule the repeatable jobs
+  // LeaseJobs.scheduleRepeatableJobs().catch(console.error);
 });
 
 export default app;

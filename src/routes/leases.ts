@@ -1,41 +1,21 @@
 import { Router, Response } from 'express';
-import { 
-  authenticate, 
-  authorize, 
+import {
+  authenticate,
+  authorize,
   requireLandlordContext,
   injectLandlordFilter,
-  requireResourceOwnership 
+  requireResourceOwnership
 } from '../middleware/auth';
 import { AuthenticatedRequest, ApiResponse } from '../types';
-import { LeaseService } from '../services/leaseService';
+import { leaseCreationSchema, leaseRenewalSchema, LeaseService, leaseUpdateSchema } from '../services/leaseService';
 import { validateBody } from '../middleware/validation';
 import { z } from 'zod';
+import { PaymentService } from '@/services/paymentService';
 
 const router = Router();
 
 // Validation schemas
-const createLeaseSchema = z.object({
-  unitId: z.string().uuid(),
-  tenantId: z.string().uuid(),
-  startDate: z.string().refine((val) => {
-    const date = new Date(val);
-    return !isNaN(date.getTime()) && val.length >= 10;
-  }, { message: "Invalid start date format" }),
-  endDate: z.string().refine((val) => {
-    const date = new Date(val);
-    return !isNaN(date.getTime()) && val.length >= 10;
-  }, { message: "Invalid end date format" }),
-  monthlyRent: z.number().positive(),
-  deposit: z.number().min(0),
-  terms: z.string().optional(),
-}).refine((data) => {
-  const startDate = new Date(data.startDate);
-  const endDate = new Date(data.endDate);
-  return endDate > startDate;
-}, {
-  message: 'End date must be after start date',
-  path: ['endDate'],
-});
+const createLeaseSchemaUpdated = leaseCreationSchema;
 
 const assignLeaseSchema = z.object({
   tenantId: z.string().uuid(),
@@ -60,30 +40,7 @@ const assignLeaseSchema = z.object({
   path: ['endDate'],
 });
 
-const updateLeaseSchema = z.object({
-  startDate: z.string().refine((val) => {
-    const date = new Date(val);
-    return !isNaN(date.getTime()) && val.length >= 10;
-  }, { message: "Invalid start date format" }).optional(),
-  endDate: z.string().refine((val) => {
-    const date = new Date(val);
-    return !isNaN(date.getTime()) && val.length >= 10;
-  }, { message: "Invalid end date format" }).optional(),
-  monthlyRent: z.number().positive().optional(),
-  deposit: z.number().min(0).optional(),
-  status: z.enum(['draft', 'active', 'expired', 'terminated']).optional(),
-  terms: z.string().optional(),
-}).refine((data) => {
-  if (data.startDate && data.endDate) {
-    const startDate = new Date(data.startDate);
-    const endDate = new Date(data.endDate);
-    return endDate > startDate;
-  }
-  return true;
-}, {
-  message: 'End date must be after start date',
-  path: ['endDate'],
-});
+const updateLeaseSchemaUpdated = leaseUpdateSchema;
 
 // Get all leases (filtered by role)
 router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
@@ -184,6 +141,58 @@ router.post('/:id/activate', authenticate, requireResourceOwnership('lease', 'id
   }
 });
 
+router.post('/:id/renew', authenticate, requireResourceOwnership('lease', 'id', 'write'), validateBody(leaseRenewalSchema), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+  try {
+      const renewedLease = await LeaseService.renewLease(req.user!.id, req.params.id, req.body);
+      res.json({
+          success: true,
+          data: renewedLease,
+          message: 'Lease renewed successfully',
+      });
+  } catch (error) {
+      console.error('Error renewing lease:', error);
+      res.status(400).json({
+          success: false,
+          error: 'Failed to renew lease',
+          message: error instanceof Error ? error.message : 'Unknown error',
+      });
+  }
+});
+
+router.get('/:id/payment-schedule', authenticate, requireResourceOwnership('lease', 'id', 'read'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+  try {
+      const schedule = await LeaseService.getLeaseWithSchedule(req.user!.id, req.params.id);
+      res.json({
+          success: true,
+          data: schedule.paymentSchedule,
+          message: 'Payment schedule retrieved successfully',
+      });
+  } catch (error) {
+      console.error('Error fetching payment schedule:', error);
+      res.status(500).json({
+          success: false,
+          error: 'Failed to fetch payment schedule',
+      });
+  }
+});
+
+router.get('/:id/balance', authenticate, requireResourceOwnership('lease', 'id', 'read'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+  try {
+      const balance = await PaymentService.calculateBalance(req.params.id);
+      res.json({
+          success: true,
+          data: balance,
+          message: 'Lease balance retrieved successfully',
+      });
+  } catch (error) {
+      console.error('Error fetching lease balance:', error);
+      res.status(500).json({
+          success: false,
+          error: 'Failed to fetch lease balance',
+      });
+  }
+});
+
 // Terminate a lease
 router.post('/:id/terminate', authenticate, requireResourceOwnership('lease', 'id', 'write'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
@@ -238,7 +247,7 @@ router.get('/:id', authenticate, requireResourceOwnership('lease', 'id', 'read')
 });
 
 // Create lease (landlord/admin only)
-router.post('/', authenticate, requireLandlordContext(), validateBody(createLeaseSchema), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+router.post('/', authenticate, requireLandlordContext(), validateBody(createLeaseSchemaUpdated), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const lease = await LeaseService.createLease(req.user!.id, req.body);
 
@@ -258,7 +267,7 @@ router.post('/', authenticate, requireLandlordContext(), validateBody(createLeas
 });
 
 // Update lease (with ownership validation)
-router.put('/:id', authenticate, requireResourceOwnership('lease', 'id', 'write'), validateBody(updateLeaseSchema), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+router.put('/:id', authenticate, requireResourceOwnership('lease', 'id', 'write'), validateBody(updateLeaseSchemaUpdated), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const lease = await LeaseService.updateLease(req.user!.id, req.params.id, req.body);
 

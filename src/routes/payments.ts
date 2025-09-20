@@ -384,11 +384,8 @@ router.get('/:id', authenticate, async (req: AuthenticatedRequest, res: Response
 // Initiate payment (mobile money collection)
 router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
-    const validationSchema = paymentInitiationSchema.extend({
-      scheduleId: z.string().uuid().optional(),
-    });
-
-    const validationResult = validationSchema.safeParse(req.body);
+    // UPDATED: The validation schema now includes an optional scheduleId
+    const validationResult = paymentInitiationSchema.safeParse(req.body);
     if (!validationResult.success) {
       return res.status(400).json({
         success: false,
@@ -399,7 +396,7 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
 
     const { leaseId, amount, phoneNumber, provider, scheduleId } = validationResult.data;
 
-    // If scheduleId provided, validate against schedule
+    // UPDATED: Validate against a specific schedule if scheduleId is provided
     let validation;
     if (scheduleId) {
       validation = await PaymentService.validatePaymentWithSchedule(leaseId, scheduleId, amount);
@@ -416,10 +413,8 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
       });
     }
 
-    // Generate external ID for tracking
     const externalId = `NDI_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
-    // Initiate IoTec collection
     const iotecRequest = {
       category: 'MobileMoney' as const,
       currency: 'UGX' as const,
@@ -434,7 +429,7 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
 
     const iotecResponse = await IoTecService.initiateCollection(iotecRequest);
 
-    // Create payment record with scheduleId
+    // UPDATED: Pass the scheduleId when creating the payment record
     const payment = await PaymentService.createPayment({
       leaseId,
       amount,
@@ -471,6 +466,7 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
     });
   }
 });
+
 
 
 // Get payment status (for polling)

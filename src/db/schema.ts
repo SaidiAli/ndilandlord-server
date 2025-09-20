@@ -3,7 +3,7 @@ import { relations } from 'drizzle-orm';
 
 // Enums
 export const userRoleEnum = pgEnum('user_role', ['admin', 'landlord', 'tenant']);
-export const leaseStatusEnum = pgEnum('lease_status', ['draft', 'active', 'expired', 'terminated']);
+export const leaseStatusEnum = pgEnum('lease_status', ['draft', 'active', 'expiring', 'expired', 'terminated']);
 export const paymentStatusEnum = pgEnum('payment_status', ['pending', 'completed', 'failed', 'refunded']);
 export const maintenanceStatusEnum = pgEnum('maintenance_status', ['submitted', 'in_progress', 'completed', 'cancelled']);
 export const mobileMoneyProviderEnum = pgEnum('mobile_money_provider', ['mtn', 'airtel', 'm-sente']);
@@ -67,10 +67,8 @@ export const leases = pgTable('leases', {
   endDate: timestamp('end_date').notNull(),
   monthlyRent: decimal('monthly_rent', { precision: 10, scale: 2 }).notNull(),
   deposit: decimal('deposit', { precision: 10, scale: 2 }).notNull(),
-
   paymentDay: integer('payment_day').default(1).notNull(),
-  previousLeaseId: uuid('previous_lease_id').references((): AnyPgColumn => leases.id), // For tracking renewals
-
+  previousLeaseId: uuid('previous_lease_id').references((): AnyPgColumn => leases.id),
   status: leaseStatusEnum('status').default('draft').notNull(),
   terms: text('terms'),
   notes: text('notes'),
@@ -82,6 +80,26 @@ export const leases = pgTable('leases', {
   index('idx_leases_unit_id').on(table.unitId),
   index('idx_leases_status').on(table.status),
   index('idx_leases_date_range').on(table.startDate, table.endDate)
+]);
+
+// Payment schedules table
+export const paymentSchedules = pgTable('payment_schedules', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  leaseId: uuid('lease_id').references(() => leases.id, { onDelete: 'cascade' }).notNull(),
+  paymentNumber: integer('payment_number').notNull(),
+  dueDate: timestamp('due_date').notNull(),
+  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
+  periodStart: timestamp('period_start').notNull(),
+  periodEnd: timestamp('period_end').notNull(),
+  isPaid: boolean('is_paid').default(false).notNull(),
+  paidPaymentId: uuid('paid_payment_id').references((): AnyPgColumn => payments.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('idx_payment_schedules_lease_id').on(table.leaseId),
+  index('idx_payment_schedules_due_date').on(table.dueDate),
+  index('idx_payment_schedules_is_paid').on(table.isPaid),
+  unique('unique_lease_payment_number').on(table.leaseId, table.paymentNumber)
 ]);
 
 // Payments table
@@ -105,26 +123,6 @@ export const payments = pgTable('payments', {
   index('idx_payments_status').on(table.status),
   index('idx_payments_due_date').on(table.dueDate),
   index('idx_payments_transaction_id').on(table.transactionId),
-]);
-
-// Payment schedules
-export const paymentSchedules = pgTable('payment_schedules', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  leaseId: uuid('lease_id').references(() => leases.id).notNull(),
-  paymentNumber: integer('payment_number').notNull(),
-  dueDate: timestamp('due_date').notNull(),
-  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
-  periodStart: timestamp('period_start').notNull(),
-  periodEnd: timestamp('period_end').notNull(),
-  isPaid: boolean('is_paid').default(false).notNull(),
-  paidPaymentId: uuid('paid_payment_id').references((): AnyPgColumn => payments.id),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => [
-  index('idx_payment_schedules_lease_id').on(table.leaseId),
-  index('idx_payment_schedules_due_date').on(table.dueDate),
-  index('idx_payment_schedules_is_paid').on(table.isPaid),
-  unique('unique_lease_payment_number').on(table.leaseId, table.paymentNumber)
 ]);
 
 // Maintenance Requests table
@@ -183,7 +181,6 @@ export const leasesRelations = relations(leases, ({ one, many }) => ({
     references: [users.id],
   }),
   payments: many(payments),
-
   paymentSchedules: many(paymentSchedules),
   previousLease: one(leases, {
     fields: [leases.previousLeaseId],
@@ -207,7 +204,6 @@ export const paymentsRelations = relations(payments, ({ one }) => ({
     fields: [payments.leaseId],
     references: [leases.id],
   }),
-
   schedule: one(paymentSchedules, {
     fields: [payments.scheduleId],
     references: [paymentSchedules.id],

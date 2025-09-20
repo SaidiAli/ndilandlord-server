@@ -39,6 +39,7 @@ export const paymentAmountSchema = z.object({
 
 export const paymentInitiationSchema = z.object({
   leaseId: z.string().uuid('Invalid lease ID'),
+  scheduleId: z.string().uuid('Invalid schedule ID').optional(),
   amount: z.number(),
   paymentMethod: z.string().optional().default('mobile_money'),
   provider: z.enum(['mtn', 'airtel', 'm-sente']),
@@ -80,65 +81,25 @@ export class PaymentService {
    */
   static async calculateBalance(leaseId: string): Promise<PaymentBalance | null> {
     try {
-      // Get lease details
-      const lease = await db
-        .select()
-        .from(leases)
-        .where(eq(leases.id, leaseId))
-        .limit(1);
+      const [leaseData] = await db.select().from(leases).where(eq(leases.id, leaseId)).limit(1);
+      if (!leaseData) return null;
 
-      if (!lease.length) {
-        return null;
-      }
+      const schedule = await PaymentScheduleService.getLeasePaymentSchedule(leaseId);
+      const totalScheduled = schedule.reduce((sum, s) => sum + s.amount, 0);
+      const totalPaid = schedule.filter(s => s.isPaid).reduce((sum, s) => sum + s.amount, 0);
+      const outstandingBalance = totalScheduled - totalPaid;
 
-      const leaseData = lease[0];
-      const now = new Date();
-
-      // Get all scheduled payments up to today
-      const scheduledPayments = await db
-        .select({
-          totalDue: sum(paymentSchedules.amount),
-        })
-        .from(paymentSchedules)
-        .where(
-          and(
-            eq(paymentSchedules.leaseId, leaseId),
-            lte(paymentSchedules.dueDate, now)
-          )
-        );
-
-      // Get all completed payments
-      const completedPayments = await db
-        .select({
-          totalPaid: sum(payments.amount),
-        })
-        .from(payments)
-        .where(
-          and(
-            eq(payments.leaseId, leaseId),
-            eq(payments.status, 'completed')
-          )
-        );
-
-      const totalDue = Number(scheduledPayments[0]?.totalDue || 0);
-      const totalPaid = Number(completedPayments[0]?.totalPaid || 0);
-      const outstandingBalance = Math.max(0, totalDue - totalPaid);
-
-      // Get next unpaid schedule entry
       const nextSchedule = await PaymentScheduleService.getNextPaymentDue(leaseId);
-
-      // Check if any payment is overdue (past due date + 5 days grace period)
       const overduePayments = await PaymentScheduleService.getOverduePayments(leaseId);
-      const isOverdue = overduePayments.length > 0;
 
       return {
         leaseId,
         monthlyRent: parseFloat(leaseData.monthlyRent),
         paidAmount: totalPaid,
         outstandingBalance,
-        minimumPayment: nextSchedule ? parseFloat(nextSchedule.amount) : 0,
+        minimumPayment: nextSchedule ? Number(nextSchedule.amount) : 0,
         dueDate: nextSchedule ? nextSchedule.dueDate.toISOString() : '',
-        isOverdue,
+        isOverdue: overduePayments.length > 0,
         nextPaymentDue: nextSchedule ? nextSchedule.dueDate.toISOString() : undefined,
       };
     } catch (error) {
@@ -357,38 +318,30 @@ export class PaymentService {
     paymentMethod?: string;
     phoneNumber?: string;
     mobileMoneyProvider?: string;
-    scheduleId?: string; // NEW PARAMETER
+    // ADDED: scheduleId is now part of the creation data
+    scheduleId?: string;
   }) {
     try {
-      // If scheduleId provided, validate it matches the lease
-      if (data.scheduleId) {
-        const [schedule] = await db
-          .select()
-          .from(paymentSchedules)
-          .where(eq(paymentSchedules.id, data.scheduleId))
-          .limit(1);
-
-        if (!schedule || schedule.leaseId !== data.leaseId) {
-          throw new Error('Invalid schedule ID for this lease');
-        }
+      const [schedule] = data.scheduleId ? await db.select().from(paymentSchedules).where(eq(paymentSchedules.id, data.scheduleId)).limit(1) : [];
+      if (data.scheduleId && (!schedule || schedule.leaseId !== data.leaseId)) {
+        throw new Error('Invalid schedule ID for this lease');
       }
 
-      const payment = await db
+      const [payment] = await db
         .insert(payments)
         .values({
           leaseId: data.leaseId,
-          scheduleId: data.scheduleId, // ADD THIS
+          scheduleId: data.scheduleId,
           amount: data.amount.toString(),
           transactionId: data.transactionId,
           paymentMethod: data.paymentMethod || 'mobile_money',
-          dueDate: new Date(), // This could be improved to use schedule due date
+          // Use schedule due date if available
+          dueDate: schedule ? schedule.dueDate : new Date(),
           status: 'pending',
-          createdAt: new Date(),
-          updatedAt: new Date(),
         })
         .returning();
 
-      return payment[0];
+      return payment;
     } catch (error) {
       console.error('Error creating payment:', error);
       throw new Error('Failed to create payment');
@@ -404,31 +357,16 @@ export class PaymentService {
     paidDate?: Date
   ) {
     try {
-      const updateData: any = {
-        status,
-        updatedAt: new Date(),
-      };
-
+      const updateData: any = { status, updatedAt: new Date() };
       if (status === 'completed' && paidDate) {
         updateData.paidDate = paidDate;
       }
 
-      const [updatedPayment] = await db
-        .update(payments)
-        .set(updateData)
-        .where(eq(payments.id, paymentId))
-        .returning();
+      const [updatedPayment] = await db.update(payments).set(updateData).where(eq(payments.id, paymentId)).returning();
 
-      // If payment is completed and has a scheduleId, update the schedule
       if (status === 'completed' && updatedPayment.scheduleId) {
-        await PaymentScheduleService.linkPaymentToSchedule(
-          paymentId,
-          updatedPayment.scheduleId
-        );
-      }
-
-      // If payment completed but no scheduleId, try to auto-match to oldest unpaid schedule
-      if (status === 'completed' && !updatedPayment.scheduleId) {
+        await PaymentScheduleService.linkPaymentToSchedule(paymentId, updatedPayment.scheduleId);
+      } else if (status === 'completed' && !updatedPayment.scheduleId) {
         await this.autoMatchPaymentToSchedule(updatedPayment);
       }
 
