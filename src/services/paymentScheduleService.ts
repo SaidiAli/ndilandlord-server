@@ -75,64 +75,45 @@ export class PaymentScheduleService {
             periodEnd: Date;
         }> = [];
 
-        let currentDate = new Date(leaseStart);
-        let paymentNumber = 1;
+        let current = new Date(leaseStart);
 
-        while (currentDate <= leaseEnd) {
-            const year = currentDate.getFullYear();
-            const month = currentDate.getMonth();
+        while (current < leaseEnd) {
+            const year = current.getFullYear();
+            const month = current.getMonth();
 
-            // Calculate period start and end
-            let periodStart: Date;
-            let periodEnd: Date;
-            let dueDate: Date;
+            const periodStart = new Date(current);
+            let periodEnd = new Date(year, month + 1, 0);
+            periodEnd.setHours(23, 59, 59, 999); // End of day
+
+            if (periodEnd > leaseEnd) {
+                periodEnd = new Date(leaseEnd);
+            }
+
             let amount = monthlyRent;
 
-            // Handle first month
-            if (paymentNumber === 1) {
-                periodStart = new Date(leaseStart);
-
-                // Set due date
-                dueDate = new Date(year, month, Math.min(paymentDay, this.getDaysInMonth(year, month)));
-
-                // If lease starts after payment day, due date is next month
-                if (leaseStart.getDate() > paymentDay) {
-                    const nextMonth = new Date(year, month + 1, 1);
-                    dueDate = new Date(
-                        nextMonth.getFullYear(),
-                        nextMonth.getMonth(),
-                        Math.min(paymentDay, this.getDaysInMonth(nextMonth.getFullYear(), nextMonth.getMonth()))
-                    );
-                }
-
-                // Period ends at month end
-                periodEnd = new Date(year, month + 1, 0); // Last day of month
-
-                // Prorate if lease starts after 1st
-                if (leaseStart.getDate() > 1) {
-                    const daysInMonth = this.getDaysInMonth(year, month);
-                    const daysInPeriod = daysInMonth - leaseStart.getDate() + 1;
+            // Proration for the first month
+            if (current.getTime() === leaseStart.getTime() && leaseStart.getDate() !== 1) {
+                 const daysInMonth = this.getDaysInMonth(year, month);
+                const daysInPeriod = daysInMonth - leaseStart.getDate() + 1;
+                amount = (monthlyRent / daysInMonth) * daysInPeriod;
+            }
+            
+            // Proration for the last month
+            const nextMonthStart = new Date(year, month + 1, 1);
+            if (nextMonthStart > leaseEnd) {
+                const daysInMonth = this.getDaysInMonth(year, month);
+                const daysInPeriod = leaseEnd.getDate();
+                if (daysInPeriod < daysInMonth) {
                     amount = (monthlyRent / daysInMonth) * daysInPeriod;
                 }
-            } else {
-                // Regular months
-                periodStart = new Date(year, month, 1);
-                periodEnd = new Date(year, month + 1, 0); // Last day of month
-                dueDate = new Date(year, month, Math.min(paymentDay, this.getDaysInMonth(year, month)));
-
-                // Check if this is the last month and needs proration
-                const nextMonthStart = new Date(year, month + 1, 1);
-                if (nextMonthStart > leaseEnd) {
-                    periodEnd = new Date(leaseEnd);
-
-                    // Prorate last month if lease ends before month end
-                    if (leaseEnd.getDate() < this.getDaysInMonth(leaseEnd.getFullYear(), leaseEnd.getMonth())) {
-                        const daysInMonth = this.getDaysInMonth(leaseEnd.getFullYear(), leaseEnd.getMonth());
-                        const daysInPeriod = leaseEnd.getDate();
-                        amount = (monthlyRent / daysInMonth) * daysInPeriod;
-                    }
-                }
             }
+
+
+            const dueDate = new Date(year, month, paymentDay);
+             if(dueDate < periodStart){
+                dueDate.setMonth(dueDate.getMonth() + 1)
+            }
+
 
             periods.push({
                 dueDate,
@@ -141,14 +122,7 @@ export class PaymentScheduleService {
                 periodEnd,
             });
 
-            // Move to next month
-            currentDate = new Date(year, month + 1, 1);
-            paymentNumber++;
-
-            // Stop if we've covered the lease period
-            if (periodEnd >= leaseEnd) {
-                break;
-            }
+            current = new Date(year, month + 1, 1);
         }
 
         return periods;
