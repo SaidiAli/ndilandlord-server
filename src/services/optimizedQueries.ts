@@ -65,7 +65,7 @@ export class OptimizedQueries {
         totalUnits: count(units.id).as('total_units'),
         occupiedUnits: sql<number>`COUNT(CASE WHEN ${units.isAvailable} = false THEN 1 END)`.as('occupied_units'),
         totalTenants: sql<number>`COUNT(DISTINCT CASE WHEN ${leases.status} = 'active' THEN ${leases.tenantId} END)`.as('total_tenants'),
-        totalMonthlyRevenue: sql<number>`SUM(CASE WHEN ${leases.status} = 'active' THEN ${units.monthlyRent}::numeric ELSE 0 END)`.as('total_monthly_revenue'),
+        totalMonthlyRevenue: sql<number>`SUM(CASE WHEN ${leases.status} = 'active' THEN ${leases.monthlyRent}::numeric ELSE 0 END)`.as('total_monthly_revenue'),
         overduePayments: sql<number>`COUNT(CASE WHEN ${payments.status} = 'pending' AND ${payments.dueDate} < NOW() - INTERVAL '5 days' THEN 1 END)`.as('overdue_payments'),
         totalOverdueAmount: sql<number>`SUM(CASE WHEN ${payments.status} = 'pending' AND ${payments.dueDate} < NOW() - INTERVAL '5 days' THEN ${payments.amount}::numeric ELSE 0 END)`.as('total_overdue_amount'),
         completedPaymentsThisMonth: sql<number>`COUNT(CASE WHEN ${payments.status} = 'completed' AND ${payments.paidDate} >= ${thisMonthStart} THEN 1 END)`.as('completed_payments_this_month'),

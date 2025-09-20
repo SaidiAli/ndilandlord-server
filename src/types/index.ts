@@ -37,5 +37,37 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
   };
 }
 
+export interface PaymentSchedule {
+  id: string;
+  leaseId: string;
+  paymentNumber: number;
+  dueDate: Date;
+  amount: number;
+  periodStart: Date;
+  periodEnd: Date;
+  isPaid: boolean;
+  paidPaymentId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface LeaseWithSchedule {
+  lease: any; // Your existing lease type
+  paymentSchedule: PaymentSchedule[];
+  totalScheduledAmount: number;
+  totalPaidAmount: number;
+  currentBalance: number;
+  nextPaymentDue?: PaymentSchedule;
+}
+
+export interface PaymentScheduleCreationData {
+  leaseId: string;
+  paymentNumber: number;
+  dueDate: Date;
+  amount: number;
+  periodStart: Date;
+  periodEnd: Date;
+}
+
 // Re-export ownership types
 export * from './ownership';

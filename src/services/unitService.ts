@@ -124,8 +124,6 @@ export class UnitService {
           bedrooms: validatedData.bedrooms,
           bathrooms: validatedData.bathrooms.toString(),
           squareFeet: validatedData.squareFeet,
-          monthlyRent: validatedData.monthlyRent.toString(),
-          deposit: validatedData.deposit.toString(),
           description: validatedData.description,
           isAvailable: true, // New units are always available initially
         })
@@ -136,8 +134,6 @@ export class UnitService {
           bedrooms: units.bedrooms,
           bathrooms: units.bathrooms,
           squareFeet: units.squareFeet,
-          monthlyRent: units.monthlyRent,
-          deposit: units.deposit,
           isAvailable: units.isAvailable,
           description: units.description,
           createdAt: units.createdAt,
@@ -217,8 +213,6 @@ export class UnitService {
           bedrooms: units.bedrooms,
           bathrooms: units.bathrooms,
           squareFeet: units.squareFeet,
-          monthlyRent: units.monthlyRent,
-          deposit: units.deposit,
           isAvailable: units.isAvailable,
           description: units.description,
           createdAt: units.createdAt,
@@ -253,8 +247,6 @@ export class UnitService {
             bedrooms: units.bedrooms,
             bathrooms: units.bathrooms,
             squareFeet: units.squareFeet,
-            monthlyRent: units.monthlyRent,
-            deposit: units.deposit,
             isAvailable: units.isAvailable,
             description: units.description,
             createdAt: units.createdAt,
@@ -310,7 +302,7 @@ export class UnitService {
       }
 
       if (filters?.maxRent) {
-        whereConditions.push(lte(units.monthlyRent, filters.maxRent.toString()));
+        whereConditions.push(lte(leases.monthlyRent, filters.maxRent.toString()));
       }
 
       // Rebuild query with all conditions if there are additional filters
@@ -323,8 +315,6 @@ export class UnitService {
               bedrooms: units.bedrooms,
               bathrooms: units.bathrooms,
               squareFeet: units.squareFeet,
-              monthlyRent: units.monthlyRent,
-              deposit: units.deposit,
               isAvailable: units.isAvailable,
               description: units.description,
               createdAt: units.createdAt,
@@ -374,8 +364,6 @@ export class UnitService {
         bedrooms: row.unit.bedrooms,
         bathrooms: parseFloat(row.unit.bathrooms), // Convert string to number
         squareFeet: row.unit.squareFeet,
-        monthlyRent: parseFloat(row.unit.monthlyRent), // Convert string to number
-        deposit: parseFloat(row.unit.deposit), // Convert string to number  
         isAvailable: row.unit.isAvailable,
         description: row.unit.description,
         createdAt: row.unit.createdAt,
@@ -427,8 +415,6 @@ export class UnitService {
             bedrooms: units.bedrooms,
             bathrooms: units.bathrooms,
             squareFeet: units.squareFeet,
-            monthlyRent: units.monthlyRent,
-            deposit: units.deposit,
             isAvailable: units.isAvailable,
             description: units.description,
             createdAt: units.createdAt,
@@ -593,8 +579,6 @@ export class UnitService {
           bedrooms: units.bedrooms,
           bathrooms: units.bathrooms,
           squareFeet: units.squareFeet,
-          monthlyRent: units.monthlyRent,
-          deposit: units.deposit,
           isAvailable: units.isAvailable,
           description: units.description,
           updatedAt: units.updatedAt,
@@ -637,16 +621,16 @@ export class UnitService {
       const occupancyRate = totalUnits > 0 ? (occupiedUnits / totalUnits) * 100 : 0;
 
       // Revenue calculations
-      const totalMonthlyRevenue = allUnits
-        .filter(u => u.currentLease?.id)
-        .reduce((sum, u) => sum + u.monthlyRent, 0);
+      // const totalMonthlyRevenue = allUnits
+      //   .filter(u => u.currentLease?.id)
+      //   .reduce((sum, u) => sum + u.monthlyRent, 0);
 
-      const potentialMonthlyRevenue = allUnits
-        .reduce((sum, u) => sum + u.monthlyRent, 0);
+      // const potentialMonthlyRevenue = allUnits
+      //   .reduce((sum, u) => sum + u.monthlyRent, 0);
 
-      const revenueEfficiency = potentialMonthlyRevenue > 0
-        ? (totalMonthlyRevenue / potentialMonthlyRevenue) * 100
-        : 0;
+      // const revenueEfficiency = potentialMonthlyRevenue > 0
+      //   ? (totalMonthlyRevenue / potentialMonthlyRevenue) * 100
+      //   : 0;
 
       // Unit type distribution
       const unitsByBedrooms = allUnits.reduce((acc, unit) => {
@@ -656,30 +640,30 @@ export class UnitService {
       }, {} as Record<number, number>);
 
       // Top performing units (by rent)
-      const topPerformingUnits = allUnits
-        .sort((a, b) => b.monthlyRent - a.monthlyRent)
-        .slice(0, 5)
-        .map(u => ({
-          unitId: u.id,
-          unitNumber: u.unitNumber,
-          propertyName: u.property.name,
-          monthlyRent: u.monthlyRent,
-          isOccupied: !!u.currentLease?.id,
-        }));
+      // const topPerformingUnits = allUnits
+      //   .sort((a, b) => b.monthlyRent - a.monthlyRent)
+      //   .slice(0, 5)
+      //   .map(u => ({
+      //     unitId: u.id,
+      //     unitNumber: u.unitNumber,
+      //     propertyName: u.property.name,
+      //     monthlyRent: u.monthlyRent,
+      //     isOccupied: !!u.currentLease?.id,
+      //   }));
 
       return {
         totalUnits,
         occupiedUnits,
         availableUnits,
         occupancyRate: Math.round(occupancyRate * 100) / 100,
-        totalMonthlyRevenue,
-        potentialMonthlyRevenue,
-        revenueEfficiency: Math.round(revenueEfficiency * 100) / 100,
+        // totalMonthlyRevenue,
+        // potentialMonthlyRevenue,
+        // revenueEfficiency: Math.round(revenueEfficiency * 100) / 100,
         unitsByBedrooms,
-        topPerformingUnits,
-        averageRent: totalUnits > 0
-          ? allUnits.reduce((sum, u) => sum + u.monthlyRent, 0) / totalUnits
-          : 0,
+        // topPerformingUnits,
+        // averageRent: totalUnits > 0
+        //   ? allUnits.reduce((sum, u) => sum + u.monthlyRent, 0) / totalUnits
+        //   : 0,
       };
     } catch (error) {
       console.error('Error calculating units analytics:', error);

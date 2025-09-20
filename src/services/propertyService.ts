@@ -192,8 +192,6 @@ export class PropertyService {
             bedrooms: units.bedrooms,
             bathrooms: units.bathrooms,
             squareFeet: units.squareFeet,
-            monthlyRent: units.monthlyRent,
-            deposit: units.deposit,
             isAvailable: units.isAvailable,
             description: units.description,
           },

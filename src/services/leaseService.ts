@@ -3,6 +3,8 @@ import { users, properties, units, leases, payments } from '../db/schema';
 import { eq, and, or, desc, asc } from 'drizzle-orm';
 import { z } from 'zod';
 import { OwnershipService } from '../db/ownership';
+import { PaymentScheduleService } from './paymentScheduleService';
+import { paymentSchedules } from '../db/schema';
 
 /**
  * Lease service for complete lease management workflow
@@ -50,8 +52,10 @@ export const leaseCreationSchema = z.object({
     return !isNaN(date.getTime()) && val.length >= 10;
   }, { message: "Invalid end date format" }),
   monthlyRent: z.number().positive('Monthly rent must be positive'),
+  paymentDay: z.number().min(1).max(31).optional(),
   deposit: z.number().min(0, 'Deposit cannot be negative'),
   terms: z.string().optional(),
+  activateImmediately: z.boolean().optional(),
 }).refine((data) => {
   const startDate = new Date(data.startDate);
   const endDate = new Date(data.endDate);
@@ -71,6 +75,7 @@ export const leaseUpdateSchema = z.object({
     return !isNaN(date.getTime()) && val.length >= 10;
   }, { message: "Invalid end date format" }).optional(),
   monthlyRent: z.number().positive('Monthly rent must be positive').optional(),
+  paymentDay: z.number().min(1).max(31).optional(),
   deposit: z.number().min(0, 'Deposit cannot be negative').optional(),
   status: z.enum(['draft', 'active', 'expired', 'terminated']).optional(),
   terms: z.string().optional(),
@@ -164,7 +169,7 @@ export class LeaseService {
 
         // Check if date ranges overlap
         const hasOverlap = (
-          newStartDate < existingEndDate && 
+          newStartDate < existingEndDate &&
           newEndDate > existingStartDate
         );
 
@@ -184,6 +189,7 @@ export class LeaseService {
           startDate: new Date(validatedData.startDate),
           endDate: new Date(validatedData.endDate),
           monthlyRent: validatedData.monthlyRent.toString(),
+          paymentDay: validatedData.paymentDay || 1,
           deposit: validatedData.deposit.toString(),
           status: 'draft',
           terms: validatedData.terms,
@@ -196,10 +202,15 @@ export class LeaseService {
           endDate: leases.endDate,
           monthlyRent: leases.monthlyRent,
           deposit: leases.deposit,
+          paymentDay: leases.paymentDay,
           status: leases.status,
           terms: leases.terms,
           createdAt: leases.createdAt,
         });
+
+      if (validatedData.activateImmediately) {
+        await this.activateLease(landlordId, newLease[0].id);
+      }
 
       // Get detailed lease information
       const detailedLease = await this.getLeaseDetails(landlordId, newLease[0].id);
@@ -265,7 +276,6 @@ export class LeaseService {
             unitNumber: units.unitNumber,
             bedrooms: units.bedrooms,
             bathrooms: units.bathrooms,
-            monthlyRent: units.monthlyRent,
           },
           property: {
             id: properties.id,
@@ -282,7 +292,7 @@ export class LeaseService {
 
       // Apply filters if provided
       let whereConditions = [eq(properties.landlordId, landlordId)];
-      
+
       if (filters?.status) {
         whereConditions.push(eq(leases.status, filters.status as any));
       }
@@ -321,7 +331,6 @@ export class LeaseService {
               unitNumber: units.unitNumber,
               bedrooms: units.bedrooms,
               bathrooms: units.bathrooms,
-              monthlyRent: units.monthlyRent,
             },
             property: {
               id: properties.id,
@@ -383,8 +392,6 @@ export class LeaseService {
             bedrooms: units.bedrooms,
             bathrooms: units.bathrooms,
             squareFeet: units.squareFeet,
-            monthlyRent: units.monthlyRent,
-            deposit: units.deposit,
             isAvailable: units.isAvailable,
             description: units.description,
           },
@@ -644,11 +651,56 @@ export class LeaseService {
   }
 
   /**
-   * Activate a lease (change from draft to active)
+   * Activate a lease and generate payment schedule
    */
   static async activateLease(landlordId: string, leaseId: string) {
     try {
-      return await this.updateLease(landlordId, leaseId, { status: 'active' });
+      // Verify ownership
+      const ownsLease = await OwnershipService.isLandlordOwnerOfLease(landlordId, leaseId);
+      if (!ownsLease) {
+        throw new Error('You can only activate your own leases');
+      }
+
+      // Get lease details
+      const [lease] = await db
+        .select()
+        .from(leases)
+        .where(eq(leases.id, leaseId))
+        .limit(1);
+
+      if (!lease) {
+        throw new Error('Lease not found');
+      }
+
+      if (lease.status !== 'draft') {
+        throw new Error('Only draft leases can be activated');
+      }
+
+      // Use transaction for atomic operation
+      await db.transaction(async (tx) => {
+        // Update lease status
+        await tx
+          .update(leases)
+          .set({
+            status: 'active',
+            updatedAt: new Date(),
+          })
+          .where(eq(leases.id, leaseId));
+
+        // Mark unit as unavailable
+        await tx
+          .update(units)
+          .set({
+            isAvailable: false,
+            updatedAt: new Date(),
+          })
+          .where(eq(units.id, lease.unitId));
+      });
+
+      // Generate payment schedule (outside transaction for now)
+      await PaymentScheduleService.generatePaymentSchedule(leaseId);
+
+      return await this.getLeaseDetails(landlordId, leaseId);
     } catch (error) {
       console.error('Error activating lease:', error);
       throw error;
@@ -656,11 +708,86 @@ export class LeaseService {
   }
 
   /**
+ * Get lease with payment schedule
+ */
+  static async getLeaseWithSchedule(landlordId: string, leaseId: string) {
+    try {
+      // Get lease details
+      const leaseDetails = await this.getLeaseDetails(landlordId, leaseId);
+      if (!leaseDetails) {
+        throw new Error('Lease not found');
+      }
+
+      // Get payment schedule
+      const schedule = await PaymentScheduleService.getLeasePaymentSchedule(leaseId);
+
+      // Calculate totals
+      const totalScheduled = schedule.reduce((sum, s) => sum + s.amount, 0);
+      const totalPaid = schedule
+        .filter(s => s.isPaid)
+        .reduce((sum, s) => sum + s.amount, 0);
+      const currentBalance = totalScheduled - totalPaid;
+
+      // Get next payment due
+      const nextPaymentDue = await PaymentScheduleService.getNextPaymentDue(leaseId);
+
+      return {
+        lease: leaseDetails,
+        paymentSchedule: schedule,
+        totalScheduledAmount: totalScheduled,
+        totalPaidAmount: totalPaid,
+        currentBalance,
+        nextPaymentDue,
+      };
+    } catch (error) {
+      console.error('Error fetching lease with schedule:', error);
+      throw error;
+    }
+  }
+
+
+  /**
    * Terminate a lease
    */
   static async terminateLease(landlordId: string, leaseId: string) {
     try {
-      return await this.updateLease(landlordId, leaseId, { status: 'terminated' });
+      await db.transaction(async (tx) => {
+        // Update lease status
+        await tx
+          .update(leases)
+          .set({
+            status: 'terminated',
+            updatedAt: new Date(),
+          })
+          .where(eq(leases.id, leaseId));
+
+
+        const [lease] = await tx.select().from(leases).where(eq(leases.id, leaseId));
+
+        // Mark unit as available
+        await tx
+          .update(units)
+          .set({
+            isAvailable: true,
+            updatedAt: new Date(),
+          })
+          .where(eq(units.id, lease.unitId));
+
+        // Mark all unpaid schedules as cancelled (optional)
+        await tx
+          .update(paymentSchedules)
+          .set({
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(paymentSchedules.leaseId, leaseId),
+              eq(paymentSchedules.isPaid, false)
+            )
+          );
+      });
+
+      return await this.getLeaseDetails(landlordId, leaseId);
     } catch (error) {
       console.error('Error terminating lease:', error);
       throw error;
@@ -683,8 +810,8 @@ export class LeaseService {
         totalMonthlyRevenue: allLeases
           .filter(l => l.lease.status === 'active')
           .reduce((sum, l) => sum + parseFloat(l.lease.monthlyRent), 0),
-        averageLeaseValue: allLeases.length > 0 
-          ? allLeases.reduce((sum, l) => sum + parseFloat(l.lease.monthlyRent), 0) / allLeases.length 
+        averageLeaseValue: allLeases.length > 0
+          ? allLeases.reduce((sum, l) => sum + parseFloat(l.lease.monthlyRent), 0) / allLeases.length
           : 0,
         expiringThisMonth: allLeases.filter(l => {
           const endDate = new Date(l.lease.endDate);

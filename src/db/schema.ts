@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, decimal, integer, boolean, pgEnum, index, unique } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, decimal, integer, boolean, pgEnum, index, unique, AnyPgColumn } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Enums
@@ -35,12 +35,10 @@ export const properties = pgTable('properties', {
   landlordId: uuid('landlord_id').references(() => users.id).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
-  // Index for efficient landlord property lookups
-  landlordIdIdx: index('idx_properties_landlord_id').on(table.landlordId),
-  // Index for property searches by city
-  cityIdx: index('idx_properties_city').on(table.city),
-}));
+}, (table) => [
+  index('idx_properties_landlord_id').on(table.landlordId),
+  index('idx_properties_city').on(table.city),
+]);
 
 // Units table
 export const units = pgTable('units', {
@@ -50,20 +48,15 @@ export const units = pgTable('units', {
   bedrooms: integer('bedrooms').notNull(),
   bathrooms: decimal('bathrooms', { precision: 3, scale: 1 }).notNull(),
   squareFeet: integer('square_feet'),
-  monthlyRent: decimal('monthly_rent', { precision: 10, scale: 2 }).notNull(),
-  deposit: decimal('deposit', { precision: 10, scale: 2 }).notNull(),
   isAvailable: boolean('is_available').default(true).notNull(),
   description: text('description'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
-  // Index for efficient property unit lookups
-  propertyIdIdx: index('idx_units_property_id').on(table.propertyId),
-  // Unique constraint for unit number within a property
-  uniqueUnitNumber: unique('unique_unit_per_property').on(table.propertyId, table.unitNumber),
-  // Index for available units
-  availabilityIdx: index('idx_units_availability').on(table.isAvailable),
-}));
+}, (table) => [
+  index('idx_units_property_id').on(table.propertyId),
+  unique('unique_unit_per_property').on(table.propertyId, table.unitNumber),
+  index('idx_units_availability').on(table.isAvailable),
+]);
 
 // Leases table
 export const leases = pgTable('leases', {
@@ -74,25 +67,28 @@ export const leases = pgTable('leases', {
   endDate: timestamp('end_date').notNull(),
   monthlyRent: decimal('monthly_rent', { precision: 10, scale: 2 }).notNull(),
   deposit: decimal('deposit', { precision: 10, scale: 2 }).notNull(),
+
+  paymentDay: integer('payment_day').default(1).notNull(),
+  previousLeaseId: uuid('previous_lease_id').references((): AnyPgColumn => leases.id), // For tracking renewals
+
   status: leaseStatusEnum('status').default('draft').notNull(),
   terms: text('terms'),
+  notes: text('notes'),
+  autoRenew: boolean('auto_renew').default(false),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
-  // Index for efficient tenant lease lookups
-  tenantIdIdx: index('idx_leases_tenant_id').on(table.tenantId),
-  // Index for unit lease lookups
-  unitIdIdx: index('idx_leases_unit_id').on(table.unitId),
-  // Index for lease status queries
-  statusIdx: index('idx_leases_status').on(table.status),
-  // Index for date range queries
-  dateRangeIdx: index('idx_leases_date_range').on(table.startDate, table.endDate),
-}));
+}, (table) => [
+  index('idx_leases_tenant_id').on(table.tenantId),
+  index('idx_leases_unit_id').on(table.unitId),
+  index('idx_leases_status').on(table.status),
+  index('idx_leases_date_range').on(table.startDate, table.endDate)
+]);
 
 // Payments table
 export const payments = pgTable('payments', {
   id: uuid('id').primaryKey().defaultRandom(),
   leaseId: uuid('lease_id').references(() => leases.id).notNull(),
+  scheduleId: uuid('schedule_id').references(() => paymentSchedules.id),
   amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
   dueDate: timestamp('due_date').notNull(),
   paidDate: timestamp('paid_date'),
@@ -104,16 +100,32 @@ export const payments = pgTable('payments', {
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
-  // Index for efficient lease payment lookups
-  leaseIdIdx: index('idx_payments_lease_id').on(table.leaseId),
-  // Index for payment status queries
-  statusIdx: index('idx_payments_status').on(table.status),
-  // Index for due date queries (overdue payments)
-  dueDateIdx: index('idx_payments_due_date').on(table.dueDate),
-  // Index for transaction tracking
-  transactionIdIdx: index('idx_payments_transaction_id').on(table.transactionId),
-}));
+}, (table) => [
+  index('idx_payments_lease_id').on(table.leaseId),
+  index('idx_payments_status').on(table.status),
+  index('idx_payments_due_date').on(table.dueDate),
+  index('idx_payments_transaction_id').on(table.transactionId),
+]);
+
+// Payment schedules
+export const paymentSchedules = pgTable('payment_schedules', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  leaseId: uuid('lease_id').references(() => leases.id).notNull(),
+  paymentNumber: integer('payment_number').notNull(),
+  dueDate: timestamp('due_date').notNull(),
+  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
+  periodStart: timestamp('period_start').notNull(),
+  periodEnd: timestamp('period_end').notNull(),
+  isPaid: boolean('is_paid').default(false).notNull(),
+  paidPaymentId: uuid('paid_payment_id').references((): AnyPgColumn => payments.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('idx_payment_schedules_lease_id').on(table.leaseId),
+  index('idx_payment_schedules_due_date').on(table.dueDate),
+  index('idx_payment_schedules_is_paid').on(table.isPaid),
+  unique('unique_lease_payment_number').on(table.leaseId, table.paymentNumber)
+]);
 
 // Maintenance Requests table
 export const maintenanceRequests = pgTable('maintenance_requests', {
@@ -129,18 +141,13 @@ export const maintenanceRequests = pgTable('maintenance_requests', {
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
-  // Index for efficient tenant maintenance request lookups
-  tenantIdIdx: index('idx_maintenance_requests_tenant_id').on(table.tenantId),
-  // Index for unit maintenance request lookups
-  unitIdIdx: index('idx_maintenance_requests_unit_id').on(table.unitId),
-  // Index for status-based queries
-  statusIdx: index('idx_maintenance_requests_status').on(table.status),
-  // Index for priority-based queries
-  priorityIdx: index('idx_maintenance_requests_priority').on(table.priority),
-  // Index for submission date queries
-  submittedAtIdx: index('idx_maintenance_requests_submitted_at').on(table.submittedAt),
-}));
+}, (table) => [
+  index('idx_maintenance_requests_tenant_id').on(table.tenantId),
+  index('idx_maintenance_requests_unit_id').on(table.unitId),
+  index('idx_maintenance_requests_status').on(table.status),
+  index('idx_maintenance_requests_priority').on(table.priority),
+  index('idx_maintenance_requests_submitted_at').on(table.submittedAt),
+]);
 
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
@@ -176,12 +183,34 @@ export const leasesRelations = relations(leases, ({ one, many }) => ({
     references: [users.id],
   }),
   payments: many(payments),
+
+  paymentSchedules: many(paymentSchedules),
+  previousLease: one(leases, {
+    fields: [leases.previousLeaseId],
+    references: [leases.id],
+  }),
+}));
+
+export const paymentSchedulesRelations = relations(paymentSchedules, ({ one }) => ({
+  lease: one(leases, {
+    fields: [paymentSchedules.leaseId],
+    references: [leases.id],
+  }),
+  payment: one(payments, {
+    fields: [paymentSchedules.paidPaymentId],
+    references: [payments.id],
+  }),
 }));
 
 export const paymentsRelations = relations(payments, ({ one }) => ({
   lease: one(leases, {
     fields: [payments.leaseId],
     references: [leases.id],
+  }),
+
+  schedule: one(paymentSchedules, {
+    fields: [payments.scheduleId],
+    references: [paymentSchedules.id],
   }),
 }));
 

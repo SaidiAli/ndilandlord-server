@@ -1,10 +1,10 @@
 import { Router, Response } from 'express';
-import { 
-  authenticate, 
-  authorize, 
+import {
+  authenticate,
+  authorize,
   requireLandlordContext,
   injectLandlordFilter,
-  requireResourceOwnership 
+  requireResourceOwnership
 } from '../middleware/auth';
 import { AuthenticatedRequest, ApiResponse, PaginatedResponse } from '../types';
 import { PaymentService, paymentInitiationSchema } from '../services/paymentService';
@@ -12,6 +12,8 @@ import { IoTecService } from '../services/iotecService';
 import { OwnershipService } from '../db/ownership';
 import crypto from 'crypto';
 import { z } from 'zod';
+import { LeaseService } from '@/services/leaseService';
+import { PaymentScheduleService } from '@/services/paymentScheduleService';
 
 const router = Router();
 
@@ -32,7 +34,7 @@ router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedR
     if (user.role === 'tenant') {
       // Tenants can only see their own payments
       const tenantPayments = await OwnershipService.getTenantPayments(user.id);
-      
+
       return res.json({
         success: true,
         data: tenantPayments,
@@ -48,7 +50,7 @@ router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedR
       if (propertyId) {
         landlordPayments = landlordPayments.filter(p => p.property.id === propertyId);
       }
-      
+
       if (leaseId) {
         landlordPayments = landlordPayments.filter(p => p.lease.id === leaseId);
       }
@@ -63,7 +65,7 @@ router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedR
       const paginatedPayments = landlordPayments.slice(startIndex, endIndex);
 
       const totalPages = Math.ceil(landlordPayments.length / (filters.limit || landlordPayments.length));
-      
+
       return res.json({
         success: true,
         data: paginatedPayments,
@@ -80,7 +82,7 @@ router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedR
     if (user.role === 'admin') {
       // Admins can see all payments
       const payments = await PaymentService.getAllPayments(filters);
-      
+
       return res.json({
         success: true,
         data: payments,
@@ -106,11 +108,11 @@ router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedR
 router.get('/landlord/overview', authenticate, requireLandlordContext(), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const landlordPayments = await OwnershipService.getLandlordPayments(req.user!.id);
-    
+
     const now = new Date();
     const pendingPayments = landlordPayments.filter(p => p.payment.status === 'pending');
     const completedPayments = landlordPayments.filter(p => p.payment.status === 'completed');
-    const overduePayments = landlordPayments.filter(p => 
+    const overduePayments = landlordPayments.filter(p =>
       p.payment.status === 'pending' && new Date(p.payment.dueDate) < now
     );
 
@@ -127,8 +129,8 @@ router.get('/landlord/overview', authenticate, requireLandlordContext(), async (
         totalPendingAmount,
         totalCompletedAmount,
         totalOverdueAmount,
-        collectionRate: landlordPayments.length > 0 
-          ? (completedPayments.length / landlordPayments.length) * 100 
+        collectionRate: landlordPayments.length > 0
+          ? (completedPayments.length / landlordPayments.length) * 100
           : 0,
       },
       overdueDetails: overduePayments.map(p => ({
@@ -173,7 +175,7 @@ router.get('/lease/:leaseId/balance', authenticate, requireResourceOwnership('le
     const { leaseId } = req.params;
 
     const balance = await PaymentService.calculateBalance(leaseId);
-    
+
     if (!balance) {
       return res.status(404).json({
         success: false,
@@ -232,7 +234,7 @@ router.get('/analytics', authenticate, async (req: AuthenticatedRequest, res: Re
     } else if (user.role === 'landlord') {
       // Landlords can only see analytics for their properties
       payments = await OwnershipService.getLandlordPayments(user.id);
-      
+
       // Filter by property if specified
       if (propertyId) {
         payments = payments.filter(p => p.property.id === propertyId);
@@ -246,7 +248,7 @@ router.get('/analytics', authenticate, async (req: AuthenticatedRequest, res: Re
         error: 'Invalid user role for analytics',
       });
     }
-    
+
     // Filter by date range if provided
     let filteredPayments = payments;
     if (startDate && endDate) {
@@ -261,15 +263,15 @@ router.get('/analytics', authenticate, async (req: AuthenticatedRequest, res: Re
     // Calculate analytics
     const totalPayments = filteredPayments.length;
     const totalAmount = filteredPayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0);
-    
+
     // Calculate average payment processing time (for completed payments)
     const completedPayments = filteredPayments.filter(p => p.payment.status === 'completed' && p.payment.paidDate);
-    const averagePaymentTime = completedPayments.length > 0 
+    const averagePaymentTime = completedPayments.length > 0
       ? completedPayments.reduce((sum, p) => {
-          const created = new Date(p.payment.createdAt).getTime();
-          const paid = new Date(p.payment.paidDate!).getTime();
-          return sum + (paid - created);
-        }, 0) / completedPayments.length / (1000 * 60) // Convert to minutes
+        const created = new Date(p.payment.createdAt).getTime();
+        const paid = new Date(p.payment.paidDate!).getTime();
+        return sum + (paid - created);
+      }, 0) / completedPayments.length / (1000 * 60) // Convert to minutes
       : 0;
 
     // Group by status
@@ -315,7 +317,7 @@ router.get('/analytics', authenticate, async (req: AuthenticatedRequest, res: Re
       const month = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
       const monthEnd = new Date(month.getFullYear(), month.getMonth() + 1, 0);
-      
+
       const monthPayments = filteredPayments.filter(p => {
         const paymentDate = new Date(p.payment.createdAt);
         return paymentDate >= monthStart && paymentDate <= monthEnd;
@@ -382,10 +384,12 @@ router.get('/:id', authenticate, async (req: AuthenticatedRequest, res: Response
 // Initiate payment (mobile money collection)
 router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
-    // Validate request body
-    const validationResult = paymentInitiationSchema.safeParse(req.body);
+    const validationSchema = paymentInitiationSchema.extend({
+      scheduleId: z.string().uuid().optional(),
+    });
+
+    const validationResult = validationSchema.safeParse(req.body);
     if (!validationResult.success) {
-      console.log(validationResult.error.errors)
       return res.status(400).json({
         success: false,
         error: 'Invalid request data',
@@ -393,11 +397,16 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
       });
     }
 
-    const { leaseId, amount, phoneNumber, provider } = validationResult.data;
+    const { leaseId, amount, phoneNumber, provider, scheduleId } = validationResult.data;
 
-    // Validate payment amount against lease balance
-    const validation = await PaymentService.validatePayment(leaseId, amount);
-    console.log(validation)
+    // If scheduleId provided, validate against schedule
+    let validation;
+    if (scheduleId) {
+      validation = await PaymentService.validatePaymentWithSchedule(leaseId, scheduleId, amount);
+    } else {
+      validation = await PaymentService.validatePayment(leaseId, amount);
+    }
+
     if (!validation.isValid) {
       return res.status(400).json({
         success: false,
@@ -409,14 +418,14 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
 
     // Generate external ID for tracking
     const externalId = `NDI_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-    
-    // Initiate IoTec collection first
+
+    // Initiate IoTec collection
     const iotecRequest = {
       category: 'MobileMoney' as const,
       currency: 'UGX' as const,
       walletId: process.env.IOTEC_WALLET_ID || '5e83b187-801e-410e-b76e-f491928547e0',
       externalId,
-      payer: phoneNumber || '256700000000', // Default if not provided
+      payer: phoneNumber,
       amount,
       payerNote: `Rent payment for lease ${leaseId}`,
       payeeNote: `NDI Landlord - Lease ${leaseId}`,
@@ -425,14 +434,15 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
 
     const iotecResponse = await IoTecService.initiateCollection(iotecRequest);
 
-    // Create payment record in database with IoTec transaction ID
+    // Create payment record with scheduleId
     const payment = await PaymentService.createPayment({
       leaseId,
       amount,
-      transactionId: iotecResponse.id, // Use IoTec transaction ID
+      transactionId: iotecResponse.id,
       paymentMethod: 'mobile_money',
       phoneNumber: phoneNumber,
       mobileMoneyProvider: provider,
+      scheduleId,
     });
 
     const response = {
@@ -440,9 +450,10 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
       transactionId: iotecResponse.id,
       amount,
       status: 'pending',
-      estimatedCompletion: new Date(Date.now() + 60000).toISOString(), // 1 minute from now
+      estimatedCompletion: new Date(Date.now() + 60000).toISOString(),
       iotecReference: iotecResponse.id,
       leaseId,
+      scheduleId,
       statusMessage: iotecResponse.statusMessage,
     };
 
@@ -460,6 +471,7 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
     });
   }
 });
+
 
 // Get payment status (for polling)
 router.get('/status/:transactionId', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
@@ -481,7 +493,7 @@ router.get('/status/:transactionId', authenticate, async (req: AuthenticatedRequ
       // Find payment by transaction ID and update
       const payments = await PaymentService.getAllPayments({});
       const payment = payments.find(p => p.payment.transactionId === transactionId);
-      
+
       if (payment && payment.payment.status === 'pending') {
         await PaymentService.updatePaymentStatus(
           payment.payment.id,
@@ -493,7 +505,7 @@ router.get('/status/:transactionId', authenticate, async (req: AuthenticatedRequ
       // Update payment to failed status
       const payments = await PaymentService.getAllPayments({});
       const payment = payments.find(p => p.payment.transactionId === transactionId);
-      
+
       if (payment && payment.payment.status === 'pending') {
         await PaymentService.updatePaymentStatus(payment.payment.id, 'failed');
       }
@@ -516,6 +528,93 @@ router.get('/status/:transactionId', authenticate, async (req: AuthenticatedRequ
     res.status(500).json({
       success: false,
       error: 'Failed to get payment status',
+    });
+  }
+});
+
+router.get('/upcoming', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+  try {
+    const user = req.user!;
+    let upcomingPayments: any[] = []; // todo: fix type
+
+    if (user.role === 'tenant') {
+      // Get tenant's active lease
+      const tenantLeases = await LeaseService.getTenantLease(user.id);
+      if (Array.isArray(tenantLeases) && tenantLeases.length > 0) {
+        const activeLease = tenantLeases.find(l => l.lease.status === 'active');
+        if (activeLease) {
+          upcomingPayments = await PaymentService.getUpcomingPayments(activeLease.lease.id);
+        }
+      }
+    } else if (user.role === 'landlord') {
+      // For landlords, they need to specify a lease
+      const { leaseId } = req.query;
+      if (leaseId) {
+        // Verify ownership
+        const ownsLease = await OwnershipService.isLandlordOwnerOfLease(user.id, leaseId as string);
+        if (ownsLease) {
+          upcomingPayments = await PaymentService.getUpcomingPayments(leaseId as string);
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: upcomingPayments,
+      message: 'Upcoming payments retrieved successfully',
+    });
+  } catch (error) {
+    console.error('Error fetching upcoming payments:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch upcoming payments',
+    });
+  }
+});
+
+// Add new endpoint for overdue payments
+router.get('/overdue', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+  try {
+    const user = req.user!;
+    let overduePayments: any[] = []; // todo: fix type
+
+    if (user.role === 'tenant') {
+      // Get tenant's active lease
+      const tenantLeases = await LeaseService.getTenantLease(user.id);
+      if (Array.isArray(tenantLeases) && tenantLeases.length > 0) {
+        const activeLease = tenantLeases.find(l => l.lease.status === 'active');
+        if (activeLease) {
+          overduePayments = await PaymentScheduleService.getOverduePayments(activeLease.lease.id);
+        }
+      }
+    } else if (user.role === 'landlord' || user.role === 'admin') {
+      // Get all overdue payments for landlord's properties
+      const landlordLeases = await LeaseService.getLandlordLeases(user.id);
+      
+      for (const lease of landlordLeases) {
+        if (lease.lease.status === 'active') {
+          const leaseOverdue = await PaymentScheduleService.getOverduePayments(lease.lease.id);
+          overduePayments.push(...leaseOverdue.map(p => ({
+            ...p,
+            leaseId: lease.lease.id,
+            tenantName: `${lease.tenant.firstName} ${lease.tenant.lastName}`,
+            unitNumber: lease.unit.unitNumber,
+            propertyName: lease.property.name,
+          })));
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: overduePayments,
+      message: 'Overdue payments retrieved successfully',
+    });
+  } catch (error) {
+    console.error('Error fetching overdue payments:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch overdue payments',
     });
   }
 });

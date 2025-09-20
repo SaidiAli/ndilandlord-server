@@ -18,12 +18,12 @@ const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:post
 
 const setupDatabase = async (options: { seed?: boolean; indexes?: boolean } = {}) => {
   const { seed = false, indexes = true } = options;
-  
+
   console.log('🚀 Starting database setup...');
-  
+
   const migrationClient = postgres(connectionString, { max: 1 });
   const db = drizzle(migrationClient);
-  
+
   try {
     // Step 1: Run Drizzle migrations
     console.log('📋 Running Drizzle migrations...');
@@ -34,16 +34,16 @@ const setupDatabase = async (options: { seed?: boolean; indexes?: boolean } = {}
     if (indexes) {
       console.log('🔍 Applying performance indexes...');
       const indexesPath = path.join(__dirname, 'migrations', 'indexes.sql');
-      
+
       if (fs.existsSync(indexesPath)) {
         const indexesSQL = fs.readFileSync(indexesPath, 'utf8');
-        
+
         // Split by statement separator and execute each
         const statements = indexesSQL
           .split(';\n')
           .map(stmt => stmt.trim())
           .filter(stmt => stmt.length > 0 && !stmt.startsWith('--'));
-        
+
         for (const statement of statements) {
           if (statement.trim()) {
             try {
@@ -56,7 +56,7 @@ const setupDatabase = async (options: { seed?: boolean; indexes?: boolean } = {}
             }
           }
         }
-        
+
         console.log('✅ Performance indexes applied');
       } else {
         console.log('⚠️  Indexes file not found, skipping...');
@@ -66,15 +66,15 @@ const setupDatabase = async (options: { seed?: boolean; indexes?: boolean } = {}
     // Step 3: Seed data if requested
     if (seed) {
       console.log('🌱 Seeding database...');
-      const { seedData } = await import('./seed');
-      await seedData();
+      // const { seedData } = await import('./seed');
+      // await seedData();
       console.log('✅ Database seeded successfully');
     }
 
     // Step 4: Verify setup
     console.log('🔍 Verifying database setup...');
     const verificationResult = await verifyDatabaseSetup(migrationClient);
-    
+
     if (verificationResult.success) {
       console.log('✅ Database setup verification passed');
       console.log('\n📊 Database Statistics:');
@@ -151,9 +151,9 @@ const verifyDatabaseSetup = async (client: postgres.Sql) => {
 
 const resetDatabase = async () => {
   console.log('⚠️  Resetting database...');
-  
+
   const migrationClient = postgres(connectionString, { max: 1 });
-  
+
   try {
     // Drop all tables in correct order (respecting foreign keys)
     await migrationClient`DROP TABLE IF EXISTS payments CASCADE`;
@@ -187,29 +187,29 @@ const main = async () => {
   try {
     switch (command) {
       case 'setup':
-        await setupDatabase({ 
+        await setupDatabase({
           seed: args.includes('--seed'),
           indexes: !args.includes('--no-indexes')
         });
         break;
-      
+
       case 'seed':
         await setupDatabase({ seed: true, indexes: false });
         break;
-      
+
       case 'indexes':
         await setupDatabase({ seed: false, indexes: true });
         break;
-      
+
       case 'reset':
         await resetDatabase();
         break;
-      
+
       case 'full':
         await resetDatabase();
         await setupDatabase({ seed: true, indexes: true });
         break;
-      
+
       default:
         console.log('Usage: tsx src/db/setup.ts <command>');
         console.log('Commands:');

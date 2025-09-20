@@ -1,7 +1,8 @@
 import { db } from '../db';
-import { payments, leases, users } from '../db/schema';
-import { eq, and, sum, desc } from 'drizzle-orm';
+import { payments, leases, users, paymentSchedules } from '../db/schema';
+import { eq, and, sum, desc, lte } from 'drizzle-orm';
 import { z } from 'zod';
+import { PaymentScheduleService } from './paymentScheduleService';
 
 // Types for payment service
 export interface PaymentBalance {
@@ -41,7 +42,7 @@ export const paymentInitiationSchema = z.object({
   amount: z.number(),
   paymentMethod: z.string().optional().default('mobile_money'),
   provider: z.enum(['mtn', 'airtel', 'm-sente']),
-  phoneNumber: z.string().regex(/^[0-9]{10,12}$/, 'Invalid phone number').optional(),
+  phoneNumber: z.string().regex(/^[0-9]{10,12}$/, 'Invalid phone number'),
 });
 
 export class PaymentService {
@@ -53,13 +54,13 @@ export class PaymentService {
     const startMonth = leaseStart.getMonth();
     const currentYear = currentDate.getFullYear();
     const currentMonth = currentDate.getMonth();
-    
+
     // Calculate total months from lease start to current month
     let monthsOwed = (currentYear - startYear) * 12 + (currentMonth - startMonth);
-    
+
     // Always include the first month of the lease
     monthsOwed = Math.max(1, monthsOwed + 1);
-    
+
     return monthsOwed;
   }
 
@@ -75,7 +76,7 @@ export class PaymentService {
   }
 
   /**
-   * Calculate payment balance for a specific lease
+   * Calculate payment balance for a specific lease (UPDATED METHOD)
    */
   static async calculateBalance(leaseId: string): Promise<PaymentBalance | null> {
     try {
@@ -91,9 +92,23 @@ export class PaymentService {
       }
 
       const leaseData = lease[0];
+      const now = new Date();
 
-      // Calculate total paid amount for this lease
-      const paidPayments = await db
+      // Get all scheduled payments up to today
+      const scheduledPayments = await db
+        .select({
+          totalDue: sum(paymentSchedules.amount),
+        })
+        .from(paymentSchedules)
+        .where(
+          and(
+            eq(paymentSchedules.leaseId, leaseId),
+            lte(paymentSchedules.dueDate, now)
+          )
+        );
+
+      // Get all completed payments
+      const completedPayments = await db
         .select({
           totalPaid: sum(payments.amount),
         })
@@ -105,38 +120,26 @@ export class PaymentService {
           )
         );
 
-      const totalPaid = Number(paidPayments[0]?.totalPaid || 0);
-      const monthlyRent = Number(leaseData.monthlyRent);
-      
-      // Calculate accurate months since lease start
-      const leaseStart = new Date(leaseData.startDate);
-      const currentDate = new Date();
-      
-      // More accurate month calculation
-      const monthsOwed = this.calculateMonthsOwed(leaseStart, currentDate);
-      const totalOwed = monthlyRent * monthsOwed;
-      const outstandingBalance = Math.max(0, totalOwed - totalPaid);
-      
-      // Calculate next payment due date (1st of the month after months owed)
-      const nextDueDate = new Date(leaseStart);
-      nextDueDate.setMonth(leaseStart.getMonth() + monthsOwed);
-      nextDueDate.setDate(1); // Always due on 1st of month
-      nextDueDate.setHours(0, 0, 0, 0); // Start of day
-      
-      // Check if payment is overdue (more than 5 days past due date)
-      const gracePeriodEnd = new Date(nextDueDate);
-      gracePeriodEnd.setDate(gracePeriodEnd.getDate() + 5);
-      const isOverdue = currentDate > gracePeriodEnd;
+      const totalDue = Number(scheduledPayments[0]?.totalDue || 0);
+      const totalPaid = Number(completedPayments[0]?.totalPaid || 0);
+      const outstandingBalance = Math.max(0, totalDue - totalPaid);
+
+      // Get next unpaid schedule entry
+      const nextSchedule = await PaymentScheduleService.getNextPaymentDue(leaseId);
+
+      // Check if any payment is overdue (past due date + 5 days grace period)
+      const overduePayments = await PaymentScheduleService.getOverduePayments(leaseId);
+      const isOverdue = overduePayments.length > 0;
 
       return {
         leaseId,
-        monthlyRent,
+        monthlyRent: parseFloat(leaseData.monthlyRent),
         paidAmount: totalPaid,
         outstandingBalance,
-        minimumPayment: Math.min(10000, outstandingBalance), // Minimum 10k UGX or remaining balance
-        dueDate: nextDueDate.toISOString(),
+        minimumPayment: nextSchedule ? parseFloat(nextSchedule.amount) : 0,
+        dueDate: nextSchedule ? nextSchedule.dueDate.toISOString() : '',
         isOverdue,
-        nextPaymentDue: outstandingBalance > 0 ? nextDueDate.toISOString() : this.calculateNextPaymentDate(nextDueDate).toISOString(),
+        nextPaymentDue: nextSchedule ? nextSchedule.dueDate.toISOString() : undefined,
       };
     } catch (error) {
       console.error('Error calculating payment balance:', error);
@@ -150,7 +153,7 @@ export class PaymentService {
   static async validatePayment(leaseId: string, amount: number): Promise<PaymentValidation> {
     try {
       const balance = await this.calculateBalance(leaseId);
-      
+
       if (!balance) {
         return {
           isValid: false,
@@ -189,8 +192,8 @@ export class PaymentService {
   }
 
   /**
-   * Get payment history for a lease with detailed information
-   */
+ * Get payment history with schedule info (UPDATED METHOD)
+ */
   static async getPaymentHistory(leaseId: string) {
     try {
       const paymentHistory = await db
@@ -206,6 +209,14 @@ export class PaymentService {
           notes: payments.notes,
           paymentCreatedAt: payments.createdAt,
           paymentUpdatedAt: payments.updatedAt,
+
+          // Schedule data (NEW)
+          scheduleId: paymentSchedules.id,
+          paymentNumber: paymentSchedules.paymentNumber,
+          scheduledAmount: paymentSchedules.amount,
+          periodStart: paymentSchedules.periodStart,
+          periodEnd: paymentSchedules.periodEnd,
+
           // Lease data
           leaseId: leases.id,
           leaseStartDate: leases.startDate,
@@ -213,6 +224,7 @@ export class PaymentService {
           monthlyRent: leases.monthlyRent,
           deposit: leases.deposit,
           leaseStatus: leases.status,
+
           // Tenant data
           tenantId: users.id,
           tenantFirstName: users.firstName,
@@ -221,12 +233,13 @@ export class PaymentService {
           tenantPhone: users.phone,
         })
         .from(payments)
+        .leftJoin(paymentSchedules, eq(payments.scheduleId, paymentSchedules.id))
         .leftJoin(leases, eq(payments.leaseId, leases.id))
         .leftJoin(users, eq(leases.tenantId, users.id))
         .where(eq(payments.leaseId, leaseId))
         .orderBy(desc(payments.createdAt));
 
-      // Transform to match mobile app expectations (PaymentWithDetails[])
+      // Transform to match expected format
       return paymentHistory.map((row) => ({
         payment: {
           id: row.paymentId,
@@ -240,10 +253,15 @@ export class PaymentService {
           notes: row.notes,
           createdAt: row.paymentCreatedAt,
           updatedAt: row.paymentUpdatedAt,
+          // Add schedule info
+          paymentNumber: row.paymentNumber,
+          periodCovered: row.periodStart && row.periodEnd ?
+            `${new Date(row.periodStart).toLocaleDateString()} - ${new Date(row.periodEnd).toLocaleDateString()}` :
+            null,
         },
         lease: {
           id: row.leaseId,
-          unitId: '', // We'd need to join with units table if needed
+          unitId: '',
           tenantId: row.tenantId,
           startDate: row.leaseStartDate,
           endDate: row.leaseEndDate,
@@ -251,8 +269,8 @@ export class PaymentService {
           deposit: parseFloat(row.deposit || '0'),
           status: row.leaseStatus as 'draft' | 'active' | 'expired' | 'terminated',
           terms: null,
-          createdAt: '', // Would need from leases table
-          updatedAt: '', // Would need from leases table
+          createdAt: '',
+          updatedAt: '',
         },
         tenant: {
           id: row.tenantId,
@@ -269,8 +287,69 @@ export class PaymentService {
   }
 
   /**
-   * Create a new payment record in pending status
-   */
+ * Validate payment against schedule
+ */
+  static async validatePaymentWithSchedule(
+    leaseId: string,
+    scheduleId: string,
+    amount: number
+  ): Promise<PaymentValidation> {
+    try {
+      // Get the schedule entry
+      const [schedule] = await db
+        .select()
+        .from(paymentSchedules)
+        .where(
+          and(
+            eq(paymentSchedules.id, scheduleId),
+            eq(paymentSchedules.leaseId, leaseId)
+          )
+        )
+        .limit(1);
+
+      if (!schedule) {
+        return {
+          isValid: false,
+          errors: ['Invalid payment schedule'],
+        };
+      }
+
+      if (schedule.isPaid) {
+        return {
+          isValid: false,
+          errors: ['This payment has already been made'],
+        };
+      }
+
+      const scheduledAmount = parseFloat(schedule.amount);
+      const errors: string[] = [];
+
+      // Allow exact amount or overpayment (credit)
+      if (amount < scheduledAmount) {
+        errors.push(`Amount must be at least UGX ${scheduledAmount.toLocaleString()}`);
+        return {
+          isValid: false,
+          errors,
+          suggestedAmount: scheduledAmount,
+        };
+      }
+
+      return {
+        isValid: true,
+        errors: [],
+      };
+    } catch (error) {
+      console.error('Error validating payment:', error);
+      return {
+        isValid: false,
+        errors: ['Failed to validate payment'],
+      };
+    }
+  }
+
+  /**
+     * Create a new payment record (UPDATED METHOD)
+     */
   static async createPayment(data: {
     leaseId: string;
     amount: number;
@@ -278,17 +357,31 @@ export class PaymentService {
     paymentMethod?: string;
     phoneNumber?: string;
     mobileMoneyProvider?: string;
-    dueDate?: Date;
+    scheduleId?: string; // NEW PARAMETER
   }) {
     try {
+      // If scheduleId provided, validate it matches the lease
+      if (data.scheduleId) {
+        const [schedule] = await db
+          .select()
+          .from(paymentSchedules)
+          .where(eq(paymentSchedules.id, data.scheduleId))
+          .limit(1);
+
+        if (!schedule || schedule.leaseId !== data.leaseId) {
+          throw new Error('Invalid schedule ID for this lease');
+        }
+      }
+
       const payment = await db
         .insert(payments)
         .values({
           leaseId: data.leaseId,
+          scheduleId: data.scheduleId, // ADD THIS
           amount: data.amount.toString(),
           transactionId: data.transactionId,
           paymentMethod: data.paymentMethod || 'mobile_money',
-          dueDate: data.dueDate || new Date(),
+          dueDate: new Date(), // This could be improved to use schedule due date
           status: 'pending',
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -303,10 +396,10 @@ export class PaymentService {
   }
 
   /**
-   * Update payment status
+   * Update payment status (UPDATED METHOD)
    */
   static async updatePaymentStatus(
-    paymentId: string, 
+    paymentId: string,
     status: 'pending' | 'completed' | 'failed' | 'refunded',
     paidDate?: Date
   ) {
@@ -320,16 +413,99 @@ export class PaymentService {
         updateData.paidDate = paidDate;
       }
 
-      const updatedPayment = await db
+      const [updatedPayment] = await db
         .update(payments)
         .set(updateData)
         .where(eq(payments.id, paymentId))
         .returning();
 
-      return updatedPayment[0];
+      // If payment is completed and has a scheduleId, update the schedule
+      if (status === 'completed' && updatedPayment.scheduleId) {
+        await PaymentScheduleService.linkPaymentToSchedule(
+          paymentId,
+          updatedPayment.scheduleId
+        );
+      }
+
+      // If payment completed but no scheduleId, try to auto-match to oldest unpaid schedule
+      if (status === 'completed' && !updatedPayment.scheduleId) {
+        await this.autoMatchPaymentToSchedule(updatedPayment);
+      }
+
+      return updatedPayment;
     } catch (error) {
       console.error('Error updating payment status:', error);
       throw new Error('Failed to update payment status');
+    }
+  }
+
+  /**
+ * Auto-match payment to oldest unpaid schedule (NEW METHOD)
+ */
+  private static async autoMatchPaymentToSchedule(payment: any) {
+    try {
+      // Find oldest unpaid schedule for this lease
+      const [oldestUnpaid] = await db
+        .select()
+        .from(paymentSchedules)
+        .where(
+          and(
+            eq(paymentSchedules.leaseId, payment.leaseId),
+            eq(paymentSchedules.isPaid, false)
+          )
+        )
+        .orderBy(paymentSchedules.paymentNumber)
+        .limit(1);
+
+      if (oldestUnpaid) {
+        // Update payment with scheduleId
+        await db
+          .update(payments)
+          .set({
+            scheduleId: oldestUnpaid.id,
+            updatedAt: new Date(),
+          })
+          .where(eq(payments.id, payment.id));
+
+        // Mark schedule as paid
+        await PaymentScheduleService.linkPaymentToSchedule(
+          payment.id,
+          oldestUnpaid.id
+        );
+      }
+    } catch (error) {
+      console.error('Error auto-matching payment to schedule:', error);
+      // Don't throw - this is a best-effort operation
+    }
+  }
+
+  /**
+* Get upcoming payments for a lease
+*/
+  static async getUpcomingPayments(leaseId: string, limit: number = 3) {
+    try {
+      const now = new Date();
+
+      const upcoming = await db
+        .select()
+        .from(paymentSchedules)
+        .where(
+          and(
+            eq(paymentSchedules.leaseId, leaseId),
+            eq(paymentSchedules.isPaid, false)
+          )
+        )
+        .orderBy(paymentSchedules.paymentNumber)
+        .limit(limit);
+
+      return upcoming.map(schedule => ({
+        ...schedule,
+        amount: parseFloat(schedule.amount),
+        status: now > schedule.dueDate ? 'overdue' : 'upcoming',
+      }));
+    } catch (error) {
+      console.error('Error fetching upcoming payments:', error);
+      throw new Error('Failed to fetch upcoming payments');
     }
   }
 
