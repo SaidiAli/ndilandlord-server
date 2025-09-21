@@ -213,7 +213,7 @@ router.post('/:id/terminate', authenticate, requireResourceOwnership('lease', 'i
   }
 });
 
-// Get lease by ID (with ownership validation)
+// Get lease by ID
 router.get('/:id', authenticate, requireResourceOwnership('lease', 'id', 'read'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     let lease;

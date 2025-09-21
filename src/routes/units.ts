@@ -20,8 +20,6 @@ const createUnitSchema = z.object({
   bedrooms: z.number().int().min(0),
   bathrooms: z.number().min(0),
   squareFeet: z.number().int().positive().optional(),
-  monthlyRent: z.number().positive(),
-  deposit: z.number().min(0),
   description: z.string().optional(),
 });
 
@@ -30,8 +28,6 @@ const updateUnitSchema = z.object({
   bedrooms: z.number().int().min(0).optional(),
   bathrooms: z.number().min(0).optional(),
   squareFeet: z.number().int().positive().optional(),
-  monthlyRent: z.number().positive().optional(),
-  deposit: z.number().min(0).optional(),
   isAvailable: z.boolean().optional(),
   description: z.string().optional(),
 });
@@ -43,8 +39,6 @@ const bulkCreateUnitsSchema = z.object({
     bedrooms: z.number().int().min(0),
     bathrooms: z.number().min(0),
     squareFeet: z.number().int().positive().optional(),
-    monthlyRent: z.number().positive(),
-    deposit: z.number().min(0),
     description: z.string().optional(),
   })).min(1),
 });
@@ -211,7 +205,7 @@ router.get('/:id', authenticate, requireResourceOwnership('unit', 'id', 'read'),
   }
 });
 
-// Create unit (landlord/admin only)
+// Create unit
 router.post('/', authenticate, requireLandlordContext(), validateBody(createUnitSchema), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const unit = await UnitService.createUnit(req.user!.id, req.body);

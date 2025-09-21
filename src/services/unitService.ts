@@ -14,8 +14,6 @@ export interface UnitCreationData {
   bedrooms: number;
   bathrooms: number;
   squareFeet?: number;
-  monthlyRent: number;
-  deposit: number;
   description?: string;
 }
 
@@ -24,8 +22,6 @@ export interface UnitUpdateData {
   bedrooms?: number;
   bathrooms?: number;
   squareFeet?: number;
-  monthlyRent?: number;
-  deposit?: number;
   isAvailable?: boolean;
   description?: string;
 }
@@ -51,8 +47,6 @@ export const unitCreationSchema = z.object({
   bedrooms: z.number().int().min(0, 'Bedrooms must be non-negative'),
   bathrooms: z.number().min(0, 'Bathrooms must be non-negative'),
   squareFeet: z.number().int().positive('Square feet must be positive').optional(),
-  monthlyRent: z.number().positive('Monthly rent must be positive'),
-  deposit: z.number().min(0, 'Deposit cannot be negative'),
   description: z.string().optional(),
 });
 
@@ -61,8 +55,6 @@ export const unitUpdateSchema = z.object({
   bedrooms: z.number().int().min(0, 'Bedrooms must be non-negative').optional(),
   bathrooms: z.number().min(0, 'Bathrooms must be non-negative').optional(),
   squareFeet: z.number().int().positive('Square feet must be positive').optional(),
-  monthlyRent: z.number().positive('Monthly rent must be positive').optional(),
-  deposit: z.number().min(0, 'Deposit cannot be negative').optional(),
   isAvailable: z.boolean().optional(),
   description: z.string().optional(),
 });
@@ -74,8 +66,6 @@ export const bulkUnitCreationSchema = z.object({
     bedrooms: z.number().int().min(0),
     bathrooms: z.number().min(0),
     squareFeet: z.number().int().positive().optional(),
-    monthlyRent: z.number().positive(),
-    deposit: z.number().min(0),
     description: z.string().optional(),
   })).min(1, 'At least one unit is required'),
 });
@@ -197,8 +187,6 @@ export class UnitService {
         bedrooms: unit.bedrooms,
         bathrooms: unit.bathrooms.toString(),
         squareFeet: unit.squareFeet,
-        monthlyRent: unit.monthlyRent.toString(),
-        deposit: unit.deposit.toString(),
         description: unit.description,
         isAvailable: true,
       }));
