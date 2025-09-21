@@ -1,6 +1,6 @@
 # NDI Landlord 2 - Property Management Backend
 
-A modern property management system backend built with Express.js, TypeScript, and Drizzle ORM.
+A multi-tenant SaaS platform for rental property management built with Express.js, TypeScript, and Drizzle ORM.
 
 ## Features
 
