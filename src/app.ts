@@ -25,12 +25,12 @@ const PORT = process.env.PORT || 4000;
 app.use(helmet());
 app.use(cors({
   origin: [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    'http://localhost:3000', // Admin dashboard
-    'http://localhost:3001', // Admin dashboard alternative
+    process.env.FRONTEND_URL || 'http://localhost:4001',
+    'http://localhost:4001', // Admin dashboard alternative
     'http://localhost:8081', // Expo dev server  
     'http://192.168.100.30:8081', // Expo dev server with IP
     'http://10.0.2.2:4000', // Android emulator
+    'http://h8gwwo40408wk0kwk4cco08c.75.119.138.78.sslip.io'
   ],
   credentials: true,
 }));
