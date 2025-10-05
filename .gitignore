@@ -49,4 +49,3 @@ Thumbs.db
 *.db
 
 # Drizzle
-/drizzle/*.sql
