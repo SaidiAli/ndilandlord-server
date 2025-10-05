@@ -10,7 +10,7 @@ import { AuthenticatedRequest, ApiResponse } from '../types';
 import { leaseCreationSchema, leaseRenewalSchema, LeaseService, leaseUpdateSchema } from '../services/leaseService';
 import { validateBody } from '../middleware/validation';
 import { z } from 'zod';
-import { PaymentService } from '@/services/paymentService';
+import { PaymentService } from '../services/paymentService';
 
 const router = Router();
 

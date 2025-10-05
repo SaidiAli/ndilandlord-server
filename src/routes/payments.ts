@@ -11,9 +11,8 @@ import { PaymentService, paymentInitiationSchema } from '../services/paymentServ
 import { IoTecService } from '../services/iotecService';
 import { OwnershipService } from '../db/ownership';
 import crypto from 'crypto';
-import { z } from 'zod';
-import { LeaseService } from '@/services/leaseService';
-import { PaymentScheduleService } from '@/services/paymentScheduleService';
+import { LeaseService } from '../services/leaseService';
+import { PaymentScheduleService } from '../services/paymentScheduleService';
 
 const router = Router();
 
