@@ -30,7 +30,7 @@ app.use(cors({
     'http://localhost:8081', // Expo dev server  
     'http://192.168.100.30:8081', // Expo dev server with IP
     'http://10.0.2.2:4000', // Android emulator
-    'http://h8gwwo40408wk0kwk4cco08c.75.119.138.78.sslip.io'
+    'https://h8gwwo40408wk0kwk4cco08c.aptusagency.com'
   ],
   credentials: true,
 }));
