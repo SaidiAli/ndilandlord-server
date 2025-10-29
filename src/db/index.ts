@@ -1,8 +1,9 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema';
+import { config } from '../domain/config';
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/wakka';
+const connectionString = config.database.url;
 
 // Disable prefetch as it's not supported for transactions
 const client = postgres(connectionString, { prepare: false });

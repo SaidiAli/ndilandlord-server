@@ -2,7 +2,6 @@ import { Router, Response } from 'express';
 import {
   authenticate,
   authorize,
-  requireLandlordContext,
   injectLandlordFilter,
   requireResourceOwnership
 } from '../middleware/auth';
@@ -104,7 +103,7 @@ router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedR
 });
 
 // Get landlord payment overview (overdue, pending, etc.)
-router.get('/landlord/overview', authenticate, requireLandlordContext(), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+router.get('/landlord/overview', authenticate, authorize('landlord'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const landlordPayments = await OwnershipService.getLandlordPayments(req.user!.id);
 

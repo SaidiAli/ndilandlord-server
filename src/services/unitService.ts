@@ -40,16 +40,6 @@ export interface UnitWithDetails {
   };
 }
 
-// Validation schemas
-export const unitCreationSchema = z.object({
-  propertyId: z.string().uuid('Invalid property ID'),
-  unitNumber: z.string().min(1, 'Unit number is required'),
-  bedrooms: z.number().int().min(0, 'Bedrooms must be non-negative'),
-  bathrooms: z.number().min(0, 'Bathrooms must be non-negative'),
-  squareFeet: z.number().int().positive('Square feet must be positive').optional(),
-  description: z.string().optional(),
-});
-
 export const unitUpdateSchema = z.object({
   unitNumber: z.string().min(1, 'Unit number is required').optional(),
   bedrooms: z.number().int().min(0, 'Bedrooms must be non-negative').optional(),
@@ -76,13 +66,11 @@ export class UnitService {
    */
   static async createUnit(landlordId: string, unitData: UnitCreationData) {
     try {
-      // Validate input
-      const validatedData = unitCreationSchema.parse(unitData);
 
       // Verify landlord owns the property
       const ownsProperty = await OwnershipService.isLandlordOwnerOfProperty(
         landlordId,
-        validatedData.propertyId
+        unitData.propertyId
       );
 
       if (!ownsProperty) {
@@ -95,8 +83,8 @@ export class UnitService {
         .from(units)
         .where(
           and(
-            eq(units.propertyId, validatedData.propertyId),
-            eq(units.unitNumber, validatedData.unitNumber)
+            eq(units.propertyId, unitData.propertyId),
+            eq(units.unitNumber, unitData.unitNumber)
           )
         )
         .limit(1);
@@ -109,12 +97,12 @@ export class UnitService {
       const newUnit = await db
         .insert(units)
         .values({
-          propertyId: validatedData.propertyId,
-          unitNumber: validatedData.unitNumber,
-          bedrooms: validatedData.bedrooms,
-          bathrooms: validatedData.bathrooms.toString(),
-          squareFeet: validatedData.squareFeet,
-          description: validatedData.description,
+          propertyId: unitData.propertyId,
+          unitNumber: unitData.unitNumber,
+          bedrooms: unitData.bedrooms,
+          bathrooms: unitData.bathrooms.toString(),
+          squareFeet: unitData.squareFeet,
+          description: unitData.description,
           isAvailable: true, // New units are always available initially
         })
         .returning({

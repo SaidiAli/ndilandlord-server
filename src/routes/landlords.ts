@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
-import { 
-  authenticate, 
-  requireLandlordContext
+import {
+  authenticate,
+  authorize
 } from '../middleware/auth';
 import { AuthenticatedRequest, ApiResponse } from '../types';
 import { PropertyService } from '../services/propertyService';
@@ -26,7 +26,7 @@ const financialReportSchema = z.object({
 });
 
 // Get complete landlord dashboard (integrated data from all services)
-router.get('/dashboard/complete', authenticate, requireLandlordContext(), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+router.get('/dashboard/complete', authenticate, authorize('landlord'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const landlordId = req.user!.id;
 
@@ -47,7 +47,7 @@ router.get('/dashboard/complete', authenticate, requireLandlordContext(), async 
 
     // Calculate payment analytics
     const now = new Date();
-    const overduePayments = paymentOverview.filter(p => 
+    const overduePayments = paymentOverview.filter(p =>
       p.payment.status === 'pending' && new Date(p.payment.dueDate) < now
     );
     const totalOverdueAmount = overduePayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0);
@@ -55,7 +55,7 @@ router.get('/dashboard/complete', authenticate, requireLandlordContext(), async 
     // Calculate lease expiration alerts (next 30 days)
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-    
+
     const expiringLeases = await LeaseService.getLandlordLeases(landlordId);
     const leasesExpiringSoon = expiringLeases.filter(l => {
       const endDate = new Date(l.lease.endDate);
@@ -129,7 +129,7 @@ router.get('/dashboard/complete', authenticate, requireLandlordContext(), async 
 });
 
 // Bulk create units for a property
-router.post('/properties/:propertyId/bulk-units', authenticate, requireLandlordContext(), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+router.post('/properties/:propertyId/bulk-units', authenticate, authorize('landlord'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     // Validate that landlord owns the property
     const ownsProperty = await OwnershipService.isLandlordOwnerOfProperty(
@@ -167,7 +167,7 @@ router.post('/properties/:propertyId/bulk-units', authenticate, requireLandlordC
 });
 
 // Generate comprehensive financial report
-router.post('/reports/financial', authenticate, requireLandlordContext(), validateBody(financialReportSchema), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+router.post('/reports/financial', authenticate, authorize('landlord'), validateBody(financialReportSchema), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const { startDate, endDate, propertyId, reportType } = req.body;
     const landlordId = req.user!.id;
@@ -180,7 +180,7 @@ router.post('/reports/financial', authenticate, requireLandlordContext(), valida
     ]);
 
     // Filter properties if specific propertyId requested
-    const properties = propertyId 
+    const properties = propertyId
       ? allProperties.filter(p => p.id === propertyId)
       : allProperties;
 
@@ -204,8 +204,8 @@ router.post('/reports/financial', authenticate, requireLandlordContext(), valida
       .filter(p => p.payment.status === 'pending')
       .reduce((sum, p) => sum + parseFloat(p.payment.amount), 0);
 
-    const occupancyRate = leases.length > 0 
-      ? (leases.filter(l => l.lease.status === 'active').length / leases.length) * 100 
+    const occupancyRate = leases.length > 0
+      ? (leases.filter(l => l.lease.status === 'active').length / leases.length) * 100
       : 0;
 
     // Revenue by property
@@ -292,7 +292,7 @@ router.post('/reports/financial', authenticate, requireLandlordContext(), valida
 });
 
 // Get landlord alerts (overdue payments, expiring leases, vacant units)
-router.get('/alerts', authenticate, requireLandlordContext(), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+router.get('/alerts', authenticate, authorize('landlord'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const landlordId = req.user!.id;
 
@@ -307,7 +307,7 @@ router.get('/alerts', authenticate, requireLandlordContext(), async (req: Authen
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
 
     // Overdue payments
-    const overduePayments = payments.filter(p => 
+    const overduePayments = payments.filter(p =>
       p.payment.status === 'pending' && new Date(p.payment.dueDate) < now
     );
 
@@ -368,7 +368,7 @@ router.get('/alerts', authenticate, requireLandlordContext(), async (req: Authen
 });
 
 // Quick stats endpoint for mobile dashboard widgets
-router.get('/quick-stats', authenticate, requireLandlordContext(), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+router.get('/quick-stats', authenticate, authorize('landlord'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const landlordId = req.user!.id;
 
@@ -382,13 +382,13 @@ router.get('/quick-stats', authenticate, requireLandlordContext(), async (req: A
 
     const now = new Date();
     const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
+
     const thisMonthPayments = payments.filter(p => {
       const paymentDate = new Date(p.payment.createdAt);
       return paymentDate >= thisMonth && p.payment.status === 'completed';
     });
 
-    const overduePayments = payments.filter(p => 
+    const overduePayments = payments.filter(p =>
       p.payment.status === 'pending' && new Date(p.payment.dueDate) < now
     );
 
@@ -399,8 +399,8 @@ router.get('/quick-stats', authenticate, requireLandlordContext(), async (req: A
       totalTenants: tenants.length,
       thisMonthRevenue: thisMonthPayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0),
       overduePayments: overduePayments.length,
-      occupancyRate: units.length > 0 
-        ? Math.round((units.filter(u => u.currentLease?.id).length / units.length) * 100) 
+      occupancyRate: units.length > 0
+        ? Math.round((units.filter(u => u.currentLease?.id).length / units.length) * 100)
         : 0,
       alerts: overduePayments.length, // Simplified alert count
     };

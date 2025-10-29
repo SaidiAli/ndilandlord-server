@@ -2,7 +2,6 @@ import { Router, Response } from 'express';
 import {
   authenticate,
   authorize,
-  requireLandlordContext,
   injectLandlordFilter,
   requireResourceOwnership
 } from '../middleware/auth';
@@ -82,7 +81,7 @@ router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedR
 });
 
 // Assign lease to existing tenant (landlord workflow)
-router.post('/assign', authenticate, requireLandlordContext(), validateBody(assignLeaseSchema), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+router.post('/assign', authenticate, authorize('landlord'), validateBody(assignLeaseSchema), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const lease = await LeaseService.assignLeaseToTenant(req.user!.id, req.body);
 
@@ -102,7 +101,7 @@ router.post('/assign', authenticate, requireLandlordContext(), validateBody(assi
 });
 
 // Get lease analytics (landlords only)
-router.get('/analytics', authenticate, requireLandlordContext(), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+router.get('/analytics', authenticate, authorize('landlord'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const analytics = await LeaseService.getLeaseAnalytics(req.user!.id);
 
@@ -247,7 +246,7 @@ router.get('/:id', authenticate, requireResourceOwnership('lease', 'id', 'read')
 });
 
 // Create lease (landlord/admin only)
-router.post('/', authenticate, requireLandlordContext(), validateBody(createLeaseSchemaUpdated), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+router.post('/', authenticate, authorize('landlord'), validateBody(createLeaseSchemaUpdated), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const lease = await LeaseService.createLease(req.user!.id, req.body);
 

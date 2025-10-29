@@ -1,8 +1,6 @@
 import { Router, Response } from 'express';
 import { 
-  authenticate, 
-  authorize,
-  requireTenantSelfAccess 
+  authenticate
 } from '../middleware/auth';
 import { AuthenticatedRequest, ApiResponse } from '../types';
 import { TenantService } from '../services/tenantService';

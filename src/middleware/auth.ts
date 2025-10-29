@@ -1,8 +1,8 @@
 import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { AuthenticatedRequest, JwtPayload, ApiResponse, OwnershipContext } from '../types';
+import { AuthenticatedRequest, JwtPayload, ApiResponse } from '../types';
 import { OwnershipValidation } from '../utils/ownershipValidation';
-import { OwnershipService } from '../db/ownership';
+import { config } from '../domain/config';
 
 export const authenticate = async (
   req: AuthenticatedRequest,
@@ -19,11 +19,11 @@ export const authenticate = async (
       });
     }
 
-    const jwtSecret = process.env.JWT_SECRET;
+    const jwtSecret = config.jwt.secret;
     if (!jwtSecret) {
       return res.status(500).json({
         success: false,
-        error: 'Server configuration error',
+        error: 'Server configuration error: JWT secret is undefined',
       });
     }
 
@@ -131,39 +131,6 @@ export const requireResourceOwnership = (
         error: 'Failed to verify resource ownership',
       });
     }
-  };
-};
-
-/**
- * Middleware to ensure landlord context and filter data accordingly
- */
-export const requireLandlordContext = () => {
-  return (
-    req: AuthenticatedRequest,
-    res: Response<ApiResponse>,
-    next: NextFunction
-  ) => {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'User not authenticated',
-      });
-    }
-
-    // Admins can access all data
-    if (req.user.role === 'admin') {
-      return next();
-    }
-
-    // Only landlords can use endpoints that require landlord context
-    if (req.user.role !== 'landlord') {
-      return res.status(403).json({
-        success: false,
-        error: 'This endpoint requires landlord permissions',
-      });
-    }
-
-    return next();
   };
 };
 

@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const runMigrations = async () => {
-  const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ndilandlord2';
+  const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/wakka';
   
   const migrationClient = postgres(connectionString, { max: 1 });
   const db = drizzle(migrationClient);

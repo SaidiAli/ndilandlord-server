@@ -4,6 +4,7 @@ import postgres from 'postgres';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import { config } from '../domain/config';
 
 dotenv.config();
 
@@ -14,7 +15,7 @@ dotenv.config();
  * - Optionally seeds data
  */
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ndilandlord2';
+const connectionString = config.database.url;
 
 const setupDatabase = async (options: { seed?: boolean; indexes?: boolean } = {}) => {
   const { seed = false, indexes = true } = options;

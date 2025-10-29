@@ -42,38 +42,16 @@ export interface PropertyDashboardData {
   };
 }
 
-// Validation schemas
-export const propertyCreationSchema = z.object({
-  name: z.string().min(1, 'Property name is required'),
-  address: z.string().min(1, 'Address is required'),
-  city: z.string().min(1, 'City is required'),
-  state: z.string().min(1, 'State is required'),
-  postalCode: z.string().optional(),
-  description: z.string().optional(),
-});
-
-export const propertyUpdateSchema = z.object({
-  name: z.string().min(1, 'Property name is required').optional(),
-  address: z.string().min(1, 'Address is required').optional(),
-  city: z.string().min(1, 'City is required').optional(),
-  state: z.string().min(1, 'State is required').optional(),
-  postalCode: z.string().optional(),
-  description: z.string().optional(),
-});
-
 export class PropertyService {
   /**
    * Create a new property for a landlord
    */
   static async createProperty(landlordId: string, propertyData: PropertyCreationData) {
     try {
-      // Validate input
-      const validatedData = propertyCreationSchema.parse(propertyData);
-
       const newProperty = await db
         .insert(properties)
         .values({
-          ...validatedData,
+          ...propertyData,
           landlordId,
         })
         .returning({
@@ -280,8 +258,6 @@ export class PropertyService {
    */
   static async updateProperty(landlordId: string, propertyId: string, updates: PropertyUpdateData) {
     try {
-      // Validate input
-      const validatedUpdates = propertyUpdateSchema.parse(updates);
 
       // Verify ownership
       const ownsProperty = await OwnershipService.isLandlordOwnerOfProperty(landlordId, propertyId);
@@ -291,7 +267,7 @@ export class PropertyService {
 
       const updatedProperty = await db
         .update(properties)
-        .set({ ...validatedUpdates, updatedAt: new Date() })
+        .set({ ...updates, updatedAt: new Date() })
         .where(
           and(
             eq(properties.id, propertyId),
