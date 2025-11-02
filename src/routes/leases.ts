@@ -10,6 +10,7 @@ import { leaseCreationSchema, leaseRenewalSchema, LeaseService, leaseUpdateSchem
 import { validateBody } from '../middleware/validation';
 import { z } from 'zod';
 import { PaymentService } from '../services/paymentService';
+import { updateLease } from '../controllers/leases';
 
 const router = Router();
 
@@ -245,7 +246,7 @@ router.get('/:id', authenticate, requireResourceOwnership('lease', 'id', 'read')
   }
 });
 
-// Create lease (landlord/admin only)
+// Create lease
 router.post('/', authenticate, authorize('landlord'), validateBody(createLeaseSchemaUpdated), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
     const lease = await LeaseService.createLease(req.user!.id, req.body);
@@ -266,24 +267,7 @@ router.post('/', authenticate, authorize('landlord'), validateBody(createLeaseSc
 });
 
 // Update lease (with ownership validation)
-router.put('/:id', authenticate, requireResourceOwnership('lease', 'id', 'write'), validateBody(updateLeaseSchemaUpdated), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
-  try {
-    const lease = await LeaseService.updateLease(req.user!.id, req.params.id, req.body);
-
-    res.json({
-      success: true,
-      data: lease,
-      message: 'Lease updated successfully',
-    });
-  } catch (error) {
-    console.error('Error updating lease:', error);
-    res.status(400).json({
-      success: false,
-      error: 'Failed to update lease',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-});
+router.put('/:id', authenticate, requireResourceOwnership('lease', 'id', 'write'), validateBody(updateLeaseSchemaUpdated), updateLease);
 
 // Delete lease (placeholder - not implemented for safety)
 router.delete('/:id', authenticate, authorize('admin'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {

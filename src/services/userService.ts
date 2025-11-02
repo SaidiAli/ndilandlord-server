@@ -39,28 +39,6 @@ export interface UserProfileUpdateData {
   phone?: string;
 }
 
-// Validation schemas
-export const tenantCreationSchema = z.object({
-  email: z.string().email('Invalid email address').optional(),
-  userName: z.string().min(1, 'Username is required'),
-  firstName: z.string().min(1, 'First name is required'),
-  lastName: z.string().min(1, 'Last name is required'),
-  phone: z.string().regex(/^[0-9+\-\s()]+$/, 'Invalid phone number'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-});
-
-export const tenantWithLeaseCreationSchema = z.object({
-  tenantData: tenantCreationSchema,
-  unitId: z.string().uuid('Invalid unit ID'),
-  leaseData: z.object({
-    startDate: z.string().datetime('Invalid start date'),
-    endDate: z.string().datetime('Invalid end date'),
-    monthlyRent: z.number().positive('Monthly rent must be positive'),
-    deposit: z.number().min(0, 'Deposit cannot be negative'),
-    terms: z.string().optional(),
-  }),
-});
-
 export const userProfileUpdateSchema = z.object({
   firstName: z.string().min(1, 'First name is required').optional(),
   lastName: z.string().min(1, 'Last name is required').optional(),
@@ -74,29 +52,28 @@ export class UserService {
    */
   static async createTenant(tenantData: TenantCreationData): Promise<any> {
     try {
-      // Validate input
-      const validatedData = tenantCreationSchema.parse(tenantData);
 
       // Check if user already exists
       const existingUser = await db
         .select()
         .from(users)
-        .where(eq(users.userName, validatedData.userName))
+        .where(and(eq(users.phone, tenantData.phone), eq(users.userName, tenantData.userName)))
         .limit(1);
 
       if (existingUser.length > 0) {
-        throw new Error('User with this username already exists');
+        throw new Error('User with this username or phone number already exists');
       }
 
       // Hash password
       const saltRounds = 12;
-      const hashedPassword = await bcrypt.hash(validatedData.password, saltRounds);
+      const hashedPassword = await bcrypt.hash(tenantData.password, saltRounds);
 
       // Create user with tenant role
       const newUser = await db
         .insert(users)
         .values({
-          ...validatedData,
+          ...tenantData,
+          email: tenantData.email || null,
           password: hashedPassword,
           role: 'tenant',
           isActive: true,
@@ -132,12 +109,6 @@ export class UserService {
     unit: any;
   }> {
     try {
-      // Validate input
-      const validatedData = tenantWithLeaseCreationSchema.parse({
-        tenantData: data,
-        unitId: data.unitId,
-        leaseData: data.leaseData,
-      });
 
       // Verify landlord owns the unit
       const ownsUnit = await OwnershipService.isLandlordOwnerOfUnit(

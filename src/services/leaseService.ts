@@ -446,17 +446,9 @@ export class LeaseService {
    */
   static async updateLease(landlordId: string, leaseId: string, updates: LeaseUpdateData) {
     try {
-      // Validate input
-      const validatedUpdates = leaseUpdateSchema.parse(updates);
-
-      // Verify ownership
-      const ownsLease = await OwnershipService.isLandlordOwnerOfLease(landlordId, leaseId);
-      if (!ownsLease) {
-        throw new Error('You can only update your own leases');
-      }
 
       // Convert dates to Date objects if provided
-      const updateData: any = { ...validatedUpdates };
+      const updateData: any = { ...updates };
       if (updateData.startDate) {
         updateData.startDate = new Date(updateData.startDate);
       }
@@ -477,22 +469,10 @@ export class LeaseService {
         await this.handleLeaseStatusTransition(leaseId, updates.status);
       }
 
-      const updatedLease = await db
+      await db
         .update(leases)
         .set(updateData)
-        .where(eq(leases.id, leaseId))
-        .returning({
-          id: leases.id,
-          unitId: leases.unitId,
-          tenantId: leases.tenantId,
-          startDate: leases.startDate,
-          endDate: leases.endDate,
-          monthlyRent: leases.monthlyRent,
-          deposit: leases.deposit,
-          status: leases.status,
-          terms: leases.terms,
-          updatedAt: leases.updatedAt,
-        });
+        .where(eq(leases.id, leaseId));
 
       // Get detailed lease information
       const detailedLease = await this.getLeaseDetails(landlordId, leaseId);
@@ -698,43 +678,43 @@ export class LeaseService {
 
   static async renewLease(landlordId: string, leaseId: string, renewalData: LeaseRenewalData) {
     try {
-        const validatedData = leaseRenewalSchema.parse(renewalData);
-        const ownsLease = await OwnershipService.isLandlordOwnerOfLease(landlordId, leaseId);
-        if (!ownsLease) {
-            throw new Error('You can only renew your own leases');
-        }
+      const validatedData = leaseRenewalSchema.parse(renewalData);
+      const ownsLease = await OwnershipService.isLandlordOwnerOfLease(landlordId, leaseId);
+      if (!ownsLease) {
+        throw new Error('You can only renew your own leases');
+      }
 
-        const [originalLease] = await db.select().from(leases).where(eq(leases.id, leaseId)).limit(1);
-        if (!originalLease) throw new Error('Lease not found');
-        if (!['active', 'expiring'].includes(originalLease.status)) {
-            throw new Error('Only active or expiring leases can be renewed');
-        }
-        
-        const newStartDate = new Date(originalLease.endDate);
-        newStartDate.setDate(newStartDate.getDate() + 1);
+      const [originalLease] = await db.select().from(leases).where(eq(leases.id, leaseId)).limit(1);
+      if (!originalLease) throw new Error('Lease not found');
+      if (!['active', 'expiring'].includes(originalLease.status)) {
+        throw new Error('Only active or expiring leases can be renewed');
+      }
 
-        const newLeaseData: LeaseCreationData = {
-            unitId: originalLease.unitId,
-            tenantId: originalLease.tenantId,
-            startDate: newStartDate.toISOString(),
-            endDate: validatedData.newEndDate,
-            monthlyRent: validatedData.newMonthlyRent || parseFloat(originalLease.monthlyRent),
-            deposit: parseFloat(originalLease.deposit),
-            paymentDay: originalLease.paymentDay,
-            terms: validatedData.newTerms || originalLease.terms || undefined,
-        };
+      const newStartDate = new Date(originalLease.endDate);
+      newStartDate.setDate(newStartDate.getDate() + 1);
 
-        const newLeaseResult = await this.createLease(landlordId, newLeaseData);
-        const newLeaseId = newLeaseResult!.lease.id;
-        
-        await db.update(leases).set({ previousLeaseId: originalLease.id }).where(eq(leases.id, newLeaseId));
-        
-        return newLeaseResult;
+      const newLeaseData: LeaseCreationData = {
+        unitId: originalLease.unitId,
+        tenantId: originalLease.tenantId,
+        startDate: newStartDate.toISOString(),
+        endDate: validatedData.newEndDate,
+        monthlyRent: validatedData.newMonthlyRent || parseFloat(originalLease.monthlyRent),
+        deposit: parseFloat(originalLease.deposit),
+        paymentDay: originalLease.paymentDay,
+        terms: validatedData.newTerms || originalLease.terms || undefined,
+      };
+
+      const newLeaseResult = await this.createLease(landlordId, newLeaseData);
+      const newLeaseId = newLeaseResult!.lease.id;
+
+      await db.update(leases).set({ previousLeaseId: originalLease.id }).where(eq(leases.id, newLeaseId));
+
+      return newLeaseResult;
     } catch (error) {
-        console.error('Error renewing lease:', error);
-        throw error;
+      console.error('Error renewing lease:', error);
+      throw error;
     }
-}
+  }
 
   /**
  * Get lease with payment schedule
@@ -773,10 +753,10 @@ export class LeaseService {
    */
   static async terminateLease(landlordId: string, leaseId: string) {
     try {
-        const ownsLease = await OwnershipService.isLandlordOwnerOfLease(landlordId, leaseId);
-        if (!ownsLease) {
-            throw new Error('You can only terminate your own leases');
-        }
+      const ownsLease = await OwnershipService.isLandlordOwnerOfLease(landlordId, leaseId);
+      if (!ownsLease) {
+        throw new Error('You can only terminate your own leases');
+      }
 
       await db.transaction(async (tx) => {
         const [lease] = await tx.select().from(leases).where(eq(leases.id, leaseId));
@@ -795,35 +775,35 @@ export class LeaseService {
    * NEW METHOD: Automated job to update lease statuses.
    */
   static async updateLeaseStatuses() {
-      try {
-          const now = new Date();
-          const thirtyDaysFromNow = new Date();
-          thirtyDaysFromNow.setDate(now.getDate() + 30);
+    try {
+      const now = new Date();
+      const thirtyDaysFromNow = new Date();
+      thirtyDaysFromNow.setDate(now.getDate() + 30);
 
-          // Mark active leases as expiring 30 days before end date
-          await db.update(leases).set({ status: 'expiring' }).where(and(
-              eq(leases.status, 'active'),
-              lte(leases.endDate, thirtyDaysFromNow)
-          ));
+      // Mark active leases as expiring 30 days before end date
+      await db.update(leases).set({ status: 'expiring' }).where(and(
+        eq(leases.status, 'active'),
+        lte(leases.endDate, thirtyDaysFromNow)
+      ));
 
-          // Mark expired leases after their end date
-          const expiredLeasesResult = await db.update(leases).set({ status: 'expired' }).where(and(
-              or(eq(leases.status, 'active'), eq(leases.status, 'expiring')),
-              lte(leases.endDate, now)
-          )).returning({ unitId: leases.unitId });
-          
-          // Make units available for expired leases
-          if (expiredLeasesResult.length > 0) {
-              const unitIds = expiredLeasesResult.map(l => l.unitId);
-              // Make unit available only if there isn't another active/draft lease for it
-              await db.update(units).set({ isAvailable: true }).where(sql`${units.id} IN ${unitIds} AND NOT EXISTS (
+      // Mark expired leases after their end date
+      const expiredLeasesResult = await db.update(leases).set({ status: 'expired' }).where(and(
+        or(eq(leases.status, 'active'), eq(leases.status, 'expiring')),
+        lte(leases.endDate, now)
+      )).returning({ unitId: leases.unitId });
+
+      // Make units available for expired leases
+      if (expiredLeasesResult.length > 0) {
+        const unitIds = expiredLeasesResult.map(l => l.unitId);
+        // Make unit available only if there isn't another active/draft lease for it
+        await db.update(units).set({ isAvailable: true }).where(sql`${units.id} IN ${unitIds} AND NOT EXISTS (
                   SELECT 1 FROM ${leases} l2 WHERE l2.unit_id = ${units.id} AND l2.status IN ('active', 'draft')
               )`);
-          }
-
-      } catch (error) {
-          console.error('Error in updateLeaseStatuses job:', error);
       }
+
+    } catch (error) {
+      console.error('Error in updateLeaseStatuses job:', error);
+    }
   }
 
   /**

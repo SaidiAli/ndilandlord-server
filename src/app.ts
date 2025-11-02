@@ -26,7 +26,7 @@ app.use(cors({
   origin: [
     process.env.FRONTEND_URL || 'http://localhost:4001',
     'http://localhost:8081', // Expo dev server  
-    'http://192.168.100.30:8081', // Expo dev server with IP
+    'http://192.168.100.60:8081', // Expo dev server with IP
     'https://h8gwwo40408wk0kwk4cco08c.aptusagency.com'
   ],
   credentials: true,

@@ -1,4 +1,7 @@
-// Improve configuration management
+import dotenv from 'dotenv';
+
+dotenv.config(); 
+
 export const config = {
   database: {
     url: process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/wakka',
@@ -13,7 +16,7 @@ export const config = {
     url: process.env.REDIS_URL || 'redis://localhost:6379',
   },
   jwt: {
-    secret: process.env.JWT_SECRET!,
+    secret: process.env.JWT_SECRET,
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
   }
 };

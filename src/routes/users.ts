@@ -8,13 +8,13 @@ import { AuthenticatedRequest, ApiResponse } from '../types';
 import { UserService } from '../services/userService';
 import { validateBody } from '../middleware/validation';
 import { z } from 'zod';
-import { createTenantController, getAllUsersController, getLandlordTenantsController, getTenantDetailsController, getUserByIdController, updateUserController, updateUserProfileController } from '../controllers/users';
+import { createTenantController, createTenantWithLease, getAllUsersController, getLandlordTenantsController, getTenantDetailsController, getUserByIdController, updateUserController, updateUserProfileController } from '../controllers/users';
 
 const router = Router();
 
 // Validation schemas
 const createTenantSchema = z.object({
-  email: z.string().email().optional(),
+  email: z.string().optional(),
   userName: z.string().min(1),
   password: z.string().min(6),
   firstName: z.string().min(1),
@@ -23,7 +23,7 @@ const createTenantSchema = z.object({
 });
 
 const createTenantWithLeaseSchema = z.object({
-  email: z.string().email().optional(),
+  email: z.string().optional(),
   userName: z.string().min(1),
   password: z.string().min(6),
   firstName: z.string().min(1),
@@ -40,7 +40,7 @@ const createTenantWithLeaseSchema = z.object({
 });
 
 const updateUserSchema = z.object({
-  email: z.string().email().optional(),
+  email: z.string().optional(),
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   phone: z.string().regex(/^[0-9+\-\s()]+$/).optional(),
@@ -54,7 +54,7 @@ router.get('/', authenticate, authorize('admin'), getAllUsersController);
 router.post('/tenants', authenticate, authorize('landlord'), validateBody(createTenantSchema), createTenantController);
 
 // Create tenant with lease
-router.post('/tenants/with-lease', authenticate, authorize('landlord'), validateBody(createTenantWithLeaseSchema), createTenantController);
+router.post('/tenants/with-lease', authenticate, authorize('landlord'), validateBody(createTenantWithLeaseSchema), createTenantWithLease);
 
 // Get landlord's tenants
 router.get('/tenants/my-tenants', authenticate, authorize('landlord'), getLandlordTenantsController);
