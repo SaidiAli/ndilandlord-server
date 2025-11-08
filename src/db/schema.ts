@@ -7,6 +7,7 @@ export const leaseStatusEnum = pgEnum('lease_status', ['draft', 'active', 'expir
 export const paymentStatusEnum = pgEnum('payment_status', ['pending', 'completed', 'failed', 'refunded']);
 export const maintenanceStatusEnum = pgEnum('maintenance_status', ['submitted', 'in_progress', 'completed', 'cancelled']);
 export const mobileMoneyProviderEnum = pgEnum('mobile_money_provider', ['mtn', 'airtel', 'm-sente']);
+export const propertyTypeEnum = pgEnum('property_type', ['residential', 'commercial', 'industrial', 'office', 'retail', 'apartment', 'house', 'condo', 'townhouse', 'warehouse', 'mixed_use', 'land']);
 
 // Users table
 export const users = pgTable('users', {
@@ -29,9 +30,10 @@ export const properties = pgTable('properties', {
   name: varchar('name', { length: 255 }).notNull(),
   address: text('address').notNull(),
   city: varchar('city', { length: 100 }).notNull(),
-  state: varchar('state', { length: 50 }).notNull(),
   postalCode: varchar('postal_code', { length: 10 }),
   description: text('description'),
+  type: propertyTypeEnum('type'),
+  numberOfUnits: integer('number_of_units').default(1),
   landlordId: uuid('landlord_id').references(() => users.id).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

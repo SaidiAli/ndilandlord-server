@@ -12,18 +12,20 @@ export interface PropertyCreationData {
   name: string;
   address: string;
   city: string;
-  state: string;
   postalCode: string;
   description?: string;
+  type?: 'residential' | 'commercial' | 'industrial' | 'office' | 'retail' | 'apartment' | 'house' | 'condo' | 'townhouse' | 'warehouse' | 'mixed_use' | 'land';
+  numberOfUnits?: number;
 }
 
 export interface PropertyUpdateData {
   name?: string;
   address?: string;
   city?: string;
-  state?: string;
   postalCode?: string;
   description?: string;
+  type?: 'residential' | 'commercial' | 'industrial' | 'office' | 'retail' | 'apartment' | 'house' | 'condo' | 'townhouse' | 'warehouse' | 'mixed_use' | 'land';
+  numberOfUnits?: number;
 }
 
 export interface PropertyDashboardData {
@@ -59,9 +61,9 @@ export class PropertyService {
           name: properties.name,
           address: properties.address,
           city: properties.city,
-          state: properties.state,
           postalCode: properties.postalCode,
           description: properties.description,
+          numberOfUnits: properties.numberOfUnits,
           landlordId: properties.landlordId,
           createdAt: properties.createdAt,
         });
@@ -78,7 +80,6 @@ export class PropertyService {
    */
   static async getLandlordProperties(landlordId: string, filters?: {
     city?: string;
-    state?: string;
   }) {
     try {
       let query = db
@@ -87,9 +88,9 @@ export class PropertyService {
           name: properties.name,
           address: properties.address,
           city: properties.city,
-          state: properties.state,
           postalCode: properties.postalCode,
           description: properties.description,
+          numberOfUnits: properties.numberOfUnits,
           createdAt: properties.createdAt,
           updatedAt: properties.updatedAt,
         })
@@ -104,10 +105,6 @@ export class PropertyService {
         whereConditions.push(eq(properties.city, filters.city));
       }
 
-      if (filters?.state) {
-        whereConditions.push(eq(properties.state, filters.state));
-      }
-
       // Rebuild query with all conditions
       if (whereConditions.length > 1) {
         query = db
@@ -116,9 +113,9 @@ export class PropertyService {
             name: properties.name,
             address: properties.address,
             city: properties.city,
-            state: properties.state,
             postalCode: properties.postalCode,
             description: properties.description,
+            numberOfUnits: properties.numberOfUnits,
             createdAt: properties.createdAt,
             updatedAt: properties.updatedAt,
           })
@@ -201,7 +198,7 @@ export class PropertyService {
         .orderBy(asc(units.unitNumber));
 
       // Calculate statistics
-      const totalUnits = propertyUnits.length;
+      const totalUnits = property[0].numberOfUnits || propertyUnits.length;
       const occupiedUnits = propertyUnits.filter(u => u.lease?.id).length;
       const availableUnits = totalUnits - occupiedUnits;
       const monthlyRevenue = propertyUnits
@@ -279,9 +276,9 @@ export class PropertyService {
           name: properties.name,
           address: properties.address,
           city: properties.city,
-          state: properties.state,
           postalCode: properties.postalCode,
           description: properties.description,
+          numberOfUnits: properties.numberOfUnits,
           landlordId: properties.landlordId,
           updatedAt: properties.updatedAt,
         });
@@ -310,9 +307,9 @@ export class PropertyService {
           name: properties.name,
           address: properties.address,
           city: properties.city,
-          state: properties.state,
           postalCode: properties.postalCode,
           description: properties.description,
+          numberOfUnits: properties.numberOfUnits,
           landlordId: properties.landlordId,
           createdAt: properties.createdAt,
           updatedAt: properties.updatedAt,

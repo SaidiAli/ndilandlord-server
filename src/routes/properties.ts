@@ -15,9 +15,9 @@ const createPropertySchema = z.object({
   name: z.string().min(1),
   address: z.string().min(1),
   city: z.string().min(1),
-  state: z.string().min(1),
   postalCode: z.string().optional(),
-  description: z.string().optional(),
+  type: z.enum(['residential', 'commercial', 'industrial', 'office', 'retail', 'apartment', 'house', 'condo', 'townhouse', 'warehouse', 'mixed_use', 'land']).optional(),
+  numberOfUnits: z.number().int().positive().optional(),
 });
 
 const updatePropertySchema = createPropertySchema.optional();

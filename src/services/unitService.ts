@@ -401,7 +401,6 @@ export class UnitService {
             name: properties.name,
             address: properties.address,
             city: properties.city,
-            state: properties.state,
             postalCode: properties.postalCode,
           },
         })

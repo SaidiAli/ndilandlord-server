@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run db:generate:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

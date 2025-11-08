@@ -37,7 +37,6 @@ export interface TenantDashboardData {
     name: string;
     address: string;
     city: string;
-    state: string;
     postalCode: string;
     description?: string;
   } | null;
@@ -144,7 +143,6 @@ export class TenantService {
           propertyName: properties.name,
           propertyAddress: properties.address,
           propertyCity: properties.city,
-          propertyState: properties.state,
           propertyPostalCode: properties.postalCode,
           propertyDescription: properties.description,
           // Landlord data
@@ -194,7 +192,6 @@ export class TenantService {
           name: info.propertyName,
           address: info.propertyAddress,
           city: info.propertyCity,
-          state: info.propertyState,
           postalCode: info.propertyPostalCode,
           description: info.propertyDescription,
         };

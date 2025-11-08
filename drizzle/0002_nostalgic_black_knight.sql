@@ -1,0 +1,2 @@
+CREATE TYPE "public"."property_type" AS ENUM('residential', 'commercial', 'industrial', 'office', 'retail', 'apartment', 'house', 'condo', 'townhouse', 'warehouse', 'mixed_use', 'land');--> statement-breakpoint
+ALTER TABLE "properties" ADD COLUMN "type" "property_type";

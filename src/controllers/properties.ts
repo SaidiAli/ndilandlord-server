@@ -4,11 +4,10 @@ import { PropertyService } from '../services/propertyService';
 
 export const getLandlordProperties = async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
     try {
-        const { city, state } = req.query;
+        const { city } = req.query;
 
         const filters = {
             city: city as string,
-            state: state as string,
         };
 
         const landlordId = req.user!.id;
