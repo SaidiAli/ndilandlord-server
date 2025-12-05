@@ -1,11 +1,9 @@
-import { Router, Response } from 'express';
+import { Router } from 'express';
 import {
   authenticate,
   authorize,
   requireResourceOwnership
 } from '../middleware/auth';
-import { AuthenticatedRequest, ApiResponse } from '../types';
-import { UnitService } from '../services/unitService';
 import { z } from 'zod';
 import { createBulkUnits, createUnit, deleteUnit, getAvailableUnits, getLandlordUnits, getUnitById, getUnitDetails, getUnitsAnalytics, updateUnit } from '../controllers/units';
 import { validateBody } from '../middleware/validation';
@@ -51,6 +49,9 @@ router.get('/available', authenticate, authorize('landlord'), getAvailableUnits)
 // Get units analytics
 router.get('/analytics', authenticate, authorize('landlord'), getUnitsAnalytics);
 
+// Create unit
+router.post('/', authenticate, authorize('landlord'), validateBody(createUnitSchema), createUnit);
+
 // Create multiple units at once (bulk creation)
 router.post('/bulk', authenticate, authorize('landlord'), validateBody(bulkCreateUnitsSchema), createBulkUnits);
 
@@ -59,9 +60,6 @@ router.get('/:id/details', authenticate, requireResourceOwnership('unit', 'id', 
 
 // Get unit by ID
 router.get('/:id', authenticate, requireResourceOwnership('unit', 'id', 'read'), getUnitById);
-
-// Create unit
-router.post('/', authenticate, authorize('landlord'), validateBody(createUnitSchema), createUnit);
 
 // Update unit
 router.put('/:id', authenticate, requireResourceOwnership('unit', 'id', 'write'), validateBody(updateUnitSchema), updateUnit);
