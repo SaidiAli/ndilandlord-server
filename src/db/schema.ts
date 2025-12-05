@@ -66,7 +66,7 @@ export const leases = pgTable('leases', {
   unitId: uuid('unit_id').references(() => units.id).notNull(),
   tenantId: uuid('tenant_id').references(() => users.id).notNull(),
   startDate: timestamp('start_date').notNull(),
-  endDate: timestamp('end_date').notNull(),
+  endDate: timestamp('end_date'),
   monthlyRent: decimal('monthly_rent', { precision: 10, scale: 2 }).notNull(),
   deposit: decimal('deposit', { precision: 10, scale: 2 }).notNull(),
   paymentDay: integer('payment_day').default(1).notNull(),

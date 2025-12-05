@@ -25,9 +25,20 @@ export class PaymentScheduleService {
                 .where(eq(paymentSchedules.leaseId, leaseId));
 
             // Calculate payment periods
+            // If lease has no end date (open lease), generate schedule for 1 year initially
+            const startDate = new Date(lease.startDate);
+            let endDate: Date;
+
+            if (lease.endDate) {
+                endDate = new Date(lease.endDate);
+            } else {
+                endDate = new Date(startDate);
+                endDate.setFullYear(endDate.getFullYear() + 1);
+            }
+
             const scheduleEntries = this.calculatePaymentPeriods(
-                new Date(lease.startDate),
-                new Date(lease.endDate),
+                startDate,
+                endDate,
                 parseFloat(lease.monthlyRent),
                 lease.paymentDay
             );
@@ -97,7 +108,7 @@ export class PaymentScheduleService {
                 const daysInPeriod = daysInMonth - leaseStart.getDate() + 1;
                 amount = (monthlyRent / daysInMonth) * daysInPeriod;
             }
-            
+
             // Proration for the last month
             const nextMonthStart = new Date(year, month + 1, 1);
             if (nextMonthStart > leaseEnd) {

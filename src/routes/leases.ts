@@ -27,14 +27,17 @@ const assignLeaseSchema = z.object({
   endDate: z.string().refine((val) => {
     const date = new Date(val);
     return !isNaN(date.getTime()) && val.length >= 10;
-  }, { message: "Invalid end date format" }),
+  }, { message: "Invalid end date format" }).optional(),
   monthlyRent: z.number().positive(),
   deposit: z.number().min(0),
   terms: z.string().optional(),
 }).refine((data) => {
-  const startDate = new Date(data.startDate);
-  const endDate = new Date(data.endDate);
-  return endDate > startDate;
+  if (data.endDate) {
+    const startDate = new Date(data.startDate);
+    const endDate = new Date(data.endDate);
+    return endDate > startDate;
+  }
+  return true;
 }, {
   message: 'End date must be after start date',
   path: ['endDate'],
@@ -143,53 +146,53 @@ router.post('/:id/activate', authenticate, requireResourceOwnership('lease', 'id
 
 router.post('/:id/renew', authenticate, requireResourceOwnership('lease', 'id', 'write'), validateBody(leaseRenewalSchema), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
-      const renewedLease = await LeaseService.renewLease(req.user!.id, req.params.id, req.body);
-      res.json({
-          success: true,
-          data: renewedLease,
-          message: 'Lease renewed successfully',
-      });
+    const renewedLease = await LeaseService.renewLease(req.user!.id, req.params.id, req.body);
+    res.json({
+      success: true,
+      data: renewedLease,
+      message: 'Lease renewed successfully',
+    });
   } catch (error) {
-      console.error('Error renewing lease:', error);
-      res.status(400).json({
-          success: false,
-          error: 'Failed to renew lease',
-          message: error instanceof Error ? error.message : 'Unknown error',
-      });
+    console.error('Error renewing lease:', error);
+    res.status(400).json({
+      success: false,
+      error: 'Failed to renew lease',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 });
 
 router.get('/:id/payment-schedule', authenticate, requireResourceOwnership('lease', 'id', 'read'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
-      const schedule = await LeaseService.getLeaseWithSchedule(req.user!.id, req.params.id);
-      res.json({
-          success: true,
-          data: schedule.paymentSchedule,
-          message: 'Payment schedule retrieved successfully',
-      });
+    const schedule = await LeaseService.getLeaseWithSchedule(req.user!.id, req.params.id);
+    res.json({
+      success: true,
+      data: schedule.paymentSchedule,
+      message: 'Payment schedule retrieved successfully',
+    });
   } catch (error) {
-      console.error('Error fetching payment schedule:', error);
-      res.status(500).json({
-          success: false,
-          error: 'Failed to fetch payment schedule',
-      });
+    console.error('Error fetching payment schedule:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch payment schedule',
+    });
   }
 });
 
 router.get('/:id/balance', authenticate, requireResourceOwnership('lease', 'id', 'read'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
-      const balance = await PaymentService.calculateBalance(req.params.id);
-      res.json({
-          success: true,
-          data: balance,
-          message: 'Lease balance retrieved successfully',
-      });
+    const balance = await PaymentService.calculateBalance(req.params.id);
+    res.json({
+      success: true,
+      data: balance,
+      message: 'Lease balance retrieved successfully',
+    });
   } catch (error) {
-      console.error('Error fetching lease balance:', error);
-      res.status(500).json({
-          success: false,
-          error: 'Failed to fetch lease balance',
-      });
+    console.error('Error fetching lease balance:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch lease balance',
+    });
   }
 });
 

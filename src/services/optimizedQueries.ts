@@ -1,6 +1,6 @@
 import { db } from '../db';
 import { users, properties, units, leases, payments } from '../db/schema';
-import { eq, and, desc, asc, sum, count, sql, gte, lte, inArray } from 'drizzle-orm';
+import { eq, and, desc, asc, sum, count, sql, gte, lte, isNotNull } from 'drizzle-orm';
 
 /**
  * Optimized database queries for better performance
@@ -444,6 +444,7 @@ export class OptimizedQueries {
         and(
           eq(properties.landlordId, landlordId),
           eq(leases.status, 'active'),
+          isNotNull(leases.endDate),
           lte(leases.endDate, futureDate),
           gte(leases.endDate, new Date())
         )

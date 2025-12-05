@@ -21,7 +21,7 @@ export interface TenantCreationData {
 
 export interface LeaseCreationData {
   startDate: string;
-  endDate: string;
+  endDate?: string;
   monthlyRent: number;
   deposit: number;
   terms?: string;
@@ -157,7 +157,7 @@ export class UserService {
           unitId: data.unitId,
           tenantId: tenant.id,
           startDate: new Date(data.leaseData.startDate),
-          endDate: new Date(data.leaseData.endDate),
+          endDate: data.leaseData.endDate ? new Date(data.leaseData.endDate) : null,
           monthlyRent: data.leaseData.monthlyRent.toString(),
           deposit: data.leaseData.deposit.toString(),
           status: 'draft', // Start as draft, can be activated later

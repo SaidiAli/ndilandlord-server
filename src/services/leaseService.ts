@@ -1,6 +1,6 @@
 import { db } from '../db';
 import { users, properties, units, leases, payments } from '../db/schema';
-import { eq, and, or, desc, asc, lte, sql } from 'drizzle-orm';
+import { eq, and, or, desc, asc, lte, sql, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { OwnershipService } from '../db/ownership';
 import { PaymentScheduleService } from './paymentScheduleService';
@@ -14,7 +14,7 @@ export interface LeaseCreationData {
   unitId: string;
   tenantId: string;
   startDate: string;
-  endDate: string;
+  endDate?: string;
   monthlyRent: number;
   paymentDay?: number;
   deposit: number;
@@ -35,7 +35,7 @@ export interface LeaseAssignmentData {
   tenantId: string;
   unitId: string;
   startDate: string;
-  endDate: string;
+  endDate?: string;
   monthlyRent: number;
   deposit: number;
   terms?: string;
@@ -58,16 +58,19 @@ export const leaseCreationSchema = z.object({
   endDate: z.string().refine((val) => {
     const date = new Date(val);
     return !isNaN(date.getTime()) && val.length >= 10;
-  }, { message: "Invalid end date format" }),
+  }, { message: "Invalid end date format" }).optional(),
   monthlyRent: z.number().positive('Monthly rent must be positive'),
   paymentDay: z.number().min(1).max(31).optional(),
   deposit: z.number().min(0, 'Deposit cannot be negative'),
   terms: z.string().optional(),
   activateImmediately: z.boolean().optional(),
 }).refine((data) => {
-  const startDate = new Date(data.startDate);
-  const endDate = new Date(data.endDate);
-  return endDate > startDate;
+  if (data.endDate) {
+    const startDate = new Date(data.startDate);
+    const endDate = new Date(data.endDate);
+    return endDate > startDate;
+  }
+  return true;
 }, {
   message: 'End date must be after start date',
   path: ['endDate'],
@@ -109,14 +112,17 @@ export const leaseAssignmentSchema = z.object({
   endDate: z.string().refine((val) => {
     const date = new Date(val);
     return !isNaN(date.getTime()) && val.length >= 10;
-  }, { message: "Invalid end date format" }),
+  }, { message: "Invalid end date format" }).optional(),
   monthlyRent: z.number().positive('Monthly rent must be positive'),
   deposit: z.number().min(0, 'Deposit cannot be negative'),
   terms: z.string().optional(),
 }).refine((data) => {
-  const startDate = new Date(data.startDate);
-  const endDate = new Date(data.endDate);
-  return endDate > startDate;
+  if (data.endDate) {
+    const startDate = new Date(data.startDate);
+    const endDate = new Date(data.endDate);
+    return endDate > startDate;
+  }
+  return true;
 }, {
   message: 'End date must be after start date',
   path: ['endDate'],
@@ -153,11 +159,6 @@ export class LeaseService {
         validatedData.tenantId
       );
 
-      // Allow creating lease for external tenants (they become part of landlord's tenant list)
-      // if (!ownsTenant) {
-      //   throw new Error('You can only create leases for your own tenants');
-      // }
-
       // Check for overlapping leases (active or draft leases only)
       const overlappingLeases = await db
         .select()
@@ -175,11 +176,13 @@ export class LeaseService {
 
       // Check for date range overlaps
       const newStartDate = new Date(validatedData.startDate);
-      const newEndDate = new Date(validatedData.endDate);
+      // If no end date, use a far future date for overlap check
+      const newEndDate = validatedData.endDate ? new Date(validatedData.endDate) : new Date('2100-01-01');
 
       for (const existingLease of overlappingLeases) {
         const existingStartDate = new Date(existingLease.startDate);
-        const existingEndDate = new Date(existingLease.endDate);
+        // If existing lease has no end date, treat as far future
+        const existingEndDate = existingLease.endDate ? new Date(existingLease.endDate) : new Date('2100-01-01');
 
         // Check if date ranges overlap
         const hasOverlap = (
@@ -188,8 +191,9 @@ export class LeaseService {
         );
 
         if (hasOverlap) {
+          const endDateStr = existingLease.endDate ? existingEndDate.toLocaleDateString() : 'Open';
           throw new Error(
-            `Lease period overlaps with existing ${existingLease.status} lease (${existingStartDate.toLocaleDateString()} - ${existingEndDate.toLocaleDateString()})`
+            `Lease period overlaps with existing ${existingLease.status} lease (${existingStartDate.toLocaleDateString()} - ${endDateStr})`
           );
         }
       }
@@ -201,7 +205,7 @@ export class LeaseService {
           unitId: validatedData.unitId,
           tenantId: validatedData.tenantId,
           startDate: new Date(validatedData.startDate),
-          endDate: new Date(validatedData.endDate),
+          endDate: validatedData.endDate ? new Date(validatedData.endDate) : null,
           monthlyRent: validatedData.monthlyRent.toString(),
           paymentDay: validatedData.paymentDay || 1,
           deposit: validatedData.deposit.toString(),
@@ -687,6 +691,10 @@ export class LeaseService {
         throw new Error('Only active or expiring leases can be renewed');
       }
 
+      if (!originalLease.endDate) {
+        throw new Error('Cannot renew an open-ended lease');
+      }
+
       const newStartDate = new Date(originalLease.endDate);
       newStartDate.setDate(newStartDate.getDate() + 1);
 
@@ -778,14 +786,18 @@ export class LeaseService {
       thirtyDaysFromNow.setDate(now.getDate() + 30);
 
       // Mark active leases as expiring 30 days before end date
+      // Only for leases with an end date
       await db.update(leases).set({ status: 'expiring' }).where(and(
         eq(leases.status, 'active'),
+        isNotNull(leases.endDate),
         lte(leases.endDate, thirtyDaysFromNow)
       ));
 
       // Mark expired leases after their end date
+      // Only for leases with an end date
       const expiredLeasesResult = await db.update(leases).set({ status: 'expired' }).where(and(
         or(eq(leases.status, 'active'), eq(leases.status, 'expiring')),
+        isNotNull(leases.endDate),
         lte(leases.endDate, now)
       )).returning({ unitId: leases.unitId });
 
@@ -823,6 +835,7 @@ export class LeaseService {
           ? allLeases.reduce((sum, l) => sum + parseFloat(l.lease.monthlyRent), 0) / allLeases.length
           : 0,
         expiringThisMonth: allLeases.filter(l => {
+          if (!l.lease.endDate) return false;
           const endDate = new Date(l.lease.endDate);
           const now = new Date();
           const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);

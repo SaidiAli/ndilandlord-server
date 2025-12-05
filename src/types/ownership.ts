@@ -5,11 +5,11 @@ import { z } from 'zod';
  */
 
 // Resource types that can be owned
-export type OwnableResourceType = 
-  | 'property' 
-  | 'unit' 
-  | 'lease' 
-  | 'payment' 
+export type OwnableResourceType =
+  | 'property'
+  | 'unit'
+  | 'lease'
+  | 'payment'
   | 'maintenance_request'
   | 'tenant';
 
@@ -112,7 +112,7 @@ export const landlordTenantCreationSchema = z.object({
   unitId: z.string().uuid('Invalid unit ID'),
   leaseData: z.object({
     startDate: z.string().datetime('Invalid start date'),
-    endDate: z.string().datetime('Invalid end date'),
+    endDate: z.string().datetime('Invalid end date').optional(),
     monthlyRent: z.number().positive('Monthly rent must be positive'),
     deposit: z.number().min(0, 'Deposit cannot be negative'),
     terms: z.string().optional(),
@@ -125,7 +125,7 @@ export const leaseAssignmentSchema = z.object({
   tenantId: z.string().uuid('Invalid tenant ID'),
   unitId: z.string().uuid('Invalid unit ID'),
   startDate: z.string().datetime('Invalid start date'),
-  endDate: z.string().datetime('Invalid end date'),
+  endDate: z.string().datetime('Invalid end date').optional(),
   monthlyRent: z.number().positive('Monthly rent must be positive'),
   deposit: z.number().min(0, 'Deposit cannot be negative'),
   terms: z.string().optional(),
@@ -209,7 +209,7 @@ export interface OwnershipValidationError {
 }
 
 // Tenant workflow states
-export type TenantWorkflowState = 
+export type TenantWorkflowState =
   | 'created_by_landlord'
   | 'lease_assigned'
   | 'lease_active'
