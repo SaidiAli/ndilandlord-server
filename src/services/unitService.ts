@@ -1,6 +1,6 @@
 import { db } from '../db';
 import { users, properties, units, leases } from '../db/schema';
-import { eq, and, desc, asc, gte, lte } from 'drizzle-orm';
+import { eq, and, desc, asc, gte, lte, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { OwnershipService } from '../db/ownership';
 
@@ -66,7 +66,6 @@ export class UnitService {
    */
   static async createUnit(landlordId: string, unitData: UnitCreationData) {
     try {
-
       // Verify landlord owns the property
       const ownsProperty = await OwnershipService.isLandlordOwnerOfProperty(
         landlordId,
@@ -148,7 +147,7 @@ export class UnitService {
         throw new Error('You can only create units in your own properties');
       }
 
-      // Check for duplicate unit numbers within the request and existing units
+      // Check for duplicate unit numbers within the request
       const unitNumbers = validatedData.units.map(u => u.unitNumber);
       const duplicatesInRequest = unitNumbers.filter((item, index) => unitNumbers.indexOf(item) !== index);
 
@@ -156,47 +155,60 @@ export class UnitService {
         throw new Error(`Duplicate unit numbers in request: ${duplicatesInRequest.join(', ')}`);
       }
 
+      // Check for existing units in the database efficiently
       const existingUnits = await db
         .select({ unitNumber: units.unitNumber })
         .from(units)
-        .where(eq(units.propertyId, validatedData.propertyId));
+        .where(
+          and(
+            eq(units.propertyId, validatedData.propertyId),
+            inArray(units.unitNumber, unitNumbers)
+          )
+        );
 
       const existingNumbers = existingUnits.map(u => u.unitNumber);
-      const duplicatesWithExisting = unitNumbers.filter(num => existingNumbers.includes(num));
 
-      if (duplicatesWithExisting.length > 0) {
-        throw new Error(`Unit numbers already exist: ${duplicatesWithExisting.join(', ')}`);
-      }
+      // Filter out units that already exist
+      const unitsToCreate = validatedData.units
+        .filter(unit => !existingNumbers.includes(unit.unitNumber))
+        .map(unit => ({
+          propertyId: validatedData.propertyId,
+          unitNumber: unit.unitNumber,
+          bedrooms: unit.bedrooms,
+          bathrooms: unit.bathrooms.toString(),
+          squareFeet: unit.squareFeet,
+          description: unit.description,
+          isAvailable: true,
+        }));
 
-      // Create all units
-      const unitsToCreate = validatedData.units.map(unit => ({
-        propertyId: validatedData.propertyId,
-        unitNumber: unit.unitNumber,
-        bedrooms: unit.bedrooms,
-        bathrooms: unit.bathrooms.toString(),
-        squareFeet: unit.squareFeet,
-        description: unit.description,
-        isAvailable: true,
+      const failedUnits = existingNumbers.map(num => ({
+        unitNumber: num,
+        reason: 'Unit number already exists'
       }));
 
-      const createdUnits = await db
-        .insert(units)
-        .values(unitsToCreate)
-        .returning({
-          id: units.id,
-          propertyId: units.propertyId,
-          unitNumber: units.unitNumber,
-          bedrooms: units.bedrooms,
-          bathrooms: units.bathrooms,
-          squareFeet: units.squareFeet,
-          isAvailable: units.isAvailable,
-          description: units.description,
-          createdAt: units.createdAt,
-        });
+      let createdUnits: any[] = [];
+
+      if (unitsToCreate.length > 0) {
+        createdUnits = await db
+          .insert(units)
+          .values(unitsToCreate)
+          .returning({
+            id: units.id,
+            propertyId: units.propertyId,
+            unitNumber: units.unitNumber,
+            bedrooms: units.bedrooms,
+            bathrooms: units.bathrooms,
+            squareFeet: units.squareFeet,
+            isAvailable: units.isAvailable,
+            description: units.description,
+            createdAt: units.createdAt,
+          });
+      }
 
       return {
-        created: createdUnits.length,
-        units: createdUnits,
+        created: createdUnits,
+        failed: failedUnits,
+        totalProcessed: unitNumbers.length
       };
     } catch (error) {
       console.error('Error creating bulk units:', error);
@@ -214,7 +226,6 @@ export class UnitService {
     maxRent?: number;
   }) {
     try {
-
       let query = db
         .select({
           unit: {
@@ -595,18 +606,6 @@ export class UnitService {
       const availableUnits = totalUnits - occupiedUnits;
       const occupancyRate = totalUnits > 0 ? (occupiedUnits / totalUnits) * 100 : 0;
 
-      // Revenue calculations
-      // const totalMonthlyRevenue = allUnits
-      //   .filter(u => u.currentLease?.id)
-      //   .reduce((sum, u) => sum + u.monthlyRent, 0);
-
-      // const potentialMonthlyRevenue = allUnits
-      //   .reduce((sum, u) => sum + u.monthlyRent, 0);
-
-      // const revenueEfficiency = potentialMonthlyRevenue > 0
-      //   ? (totalMonthlyRevenue / potentialMonthlyRevenue) * 100
-      //   : 0;
-
       // Unit type distribution
       const unitsByBedrooms = allUnits.reduce((acc, unit) => {
         const bedrooms = unit.bedrooms;
@@ -614,31 +613,12 @@ export class UnitService {
         return acc;
       }, {} as Record<number, number>);
 
-      // Top performing units (by rent)
-      // const topPerformingUnits = allUnits
-      //   .sort((a, b) => b.monthlyRent - a.monthlyRent)
-      //   .slice(0, 5)
-      //   .map(u => ({
-      //     unitId: u.id,
-      //     unitNumber: u.unitNumber,
-      //     propertyName: u.property.name,
-      //     monthlyRent: u.monthlyRent,
-      //     isOccupied: !!u.currentLease?.id,
-      //   }));
-
       return {
         totalUnits,
         occupiedUnits,
         availableUnits,
         occupancyRate: Math.round(occupancyRate * 100) / 100,
-        // totalMonthlyRevenue,
-        // potentialMonthlyRevenue,
-        // revenueEfficiency: Math.round(revenueEfficiency * 100) / 100,
         unitsByBedrooms,
-        // topPerformingUnits,
-        // averageRent: totalUnits > 0
-        //   ? allUnits.reduce((sum, u) => sum + u.monthlyRent, 0) / totalUnits
-        //   : 0,
       };
     } catch (error) {
       console.error('Error calculating units analytics:', error);
@@ -671,8 +651,7 @@ export class UnitService {
         });
 
         // Calculate vacancy days (simplified - time between leases)
-        // This is a basic calculation - could be enhanced with more detailed vacancy tracking
-        const unitCreated = new Date(); // Placeholder - would need unit creation date
+        const unitCreated = new Date(); // Placeholder
         const totalDaysSinceCreation = Math.ceil((new Date().getTime() - unitCreated.getTime()) / (1000 * 60 * 60 * 24));
         totalDaysVacant = Math.max(0, totalDaysSinceCreation - totalDaysOccupied);
       }

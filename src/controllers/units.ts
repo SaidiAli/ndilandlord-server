@@ -86,7 +86,7 @@ export const createBulkUnits = async (req: AuthenticatedRequest, res: Response<A
         res.status(201).json({
             success: true,
             data: result,
-            message: `Successfully created ${result.created} units`,
+            message: `Processed ${result.totalProcessed} units: ${result.created.length} created, ${result.failed.length} skipped`,
         });
     } catch (error) {
         console.error('Error creating bulk units:', error);
