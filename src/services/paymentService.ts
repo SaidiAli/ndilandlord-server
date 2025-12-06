@@ -85,8 +85,22 @@ export class PaymentService {
       if (!leaseData) return null;
 
       const schedule = await PaymentScheduleService.getLeasePaymentSchedule(leaseId);
-      const totalScheduled = schedule.reduce((sum, s) => sum + s.amount, 0);
-      const totalPaid = schedule.filter(s => s.isPaid).reduce((sum, s) => sum + s.amount, 0);
+
+      // Get current date (start of day for consistent comparison)
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+
+      // Include schedules where dueDate <= now
+      // Since dueDate represents when rent becomes due (at period start),
+      // this correctly captures all obligations that are currently due
+      const dueSchedules = schedule.filter(s => {
+        const dueDate = new Date(s.dueDate);
+        dueDate.setHours(0, 0, 0, 0);
+        return dueDate <= now;
+      });
+
+      const totalScheduled = dueSchedules.reduce((sum, s) => sum + s.amount, 0);
+      const totalPaid = dueSchedules.filter(s => s.isPaid).reduce((sum, s) => sum + s.amount, 0);
       const outstandingBalance = totalScheduled - totalPaid;
 
       const nextSchedule = await PaymentScheduleService.getNextPaymentDue(leaseId);
