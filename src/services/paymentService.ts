@@ -1,6 +1,6 @@
 import { db } from '../db';
 import { payments, leases, users, paymentSchedules } from '../db/schema';
-import { eq, and, sum, desc, lte } from 'drizzle-orm';
+import { eq, and, desc, asc } from 'drizzle-orm';
 import { z } from 'zod';
 import { PaymentScheduleService } from './paymentScheduleService';
 
@@ -364,32 +364,59 @@ export class PaymentService {
       // Create transaction ID if not provided (for manual payments)
       const transactionId = data.transactionId || `MAN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-      // 1. Create the payment record directly as completed
-      const [payment] = await db
-        .insert(payments)
-        .values({
-          leaseId: data.leaseId,
-          scheduleId: data.scheduleId,
-          amount: data.amount.toString(),
-          transactionId: transactionId,
-          paymentMethod: data.paymentMethod,
-          status: 'completed',
-          paidDate: data.paidDate,
-          notes: data.notes,
-          dueDate: data.paidDate, // Default due date to paid date if no schedule
-        })
-        .returning();
-
-      // 2. Handle Schedule Linking
       if (data.scheduleId) {
-        // Explicit schedule provided
-        await PaymentScheduleService.linkPaymentToSchedule(payment.id, data.scheduleId);
-      } else {
-        // Auto-match if no schedule provided
-        await this.autoMatchPaymentToSchedule(payment);
-      }
+        // CASE 1: Specific Schedule Selected
+        // Create the payment record
+        const [payment] = await db
+          .insert(payments)
+          .values({
+            leaseId: data.leaseId,
+            scheduleId: data.scheduleId,
+            amount: data.amount.toString(),
+            transactionId: transactionId,
+            paymentMethod: data.paymentMethod,
+            status: 'completed',
+            paidDate: data.paidDate,
+            notes: data.notes,
+            dueDate: data.paidDate,
+          })
+          .returning();
 
-      return payment;
+        // Check if this schedule is now fully paid
+        const schedule = await db.select().from(paymentSchedules).where(eq(paymentSchedules.id, data.scheduleId)).limit(1);
+        if (schedule.length > 0) {
+          const existingPayments = await db
+            .select({ amount: payments.amount })
+            .from(payments)
+            .where(eq(payments.scheduleId, data.scheduleId));
+
+          const totalPaid = existingPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+
+          // Tolerance for float math
+          if (totalPaid >= parseFloat(schedule[0].amount) - 0.01) {
+            await PaymentScheduleService.linkPaymentToSchedule(payment.id, data.scheduleId);
+          }
+        }
+
+        return payment;
+      } else {
+        // CASE 2: No Specific Schedule (Auto-Distribute / Cascading)
+        const createdPayments = await this.distributePaymentToSchedules(
+          data.leaseId,
+          data.amount,
+          transactionId,
+          data.paymentMethod,
+          data.paidDate,
+          data.notes
+        );
+
+        // Return the first payment for response consistency, 
+        // or wrap in a way the frontend understands?
+        // The frontend expects a single payment object usually, but for a split payment it might be tricky.
+        // Let's return the first one as a proxy, or the "primary" one.
+        // Or simply the last one created.
+        return createdPayments[0];
+      }
     } catch (error) {
       console.error('Error registering manual payment:', error);
       throw new Error('Failed to register manual payment');
@@ -412,6 +439,10 @@ export class PaymentService {
 
       const [updatedPayment] = await db.update(payments).set(updateData).where(eq(payments.id, paymentId)).returning();
 
+      if (!updatedPayment) {
+        throw new Error('Payment not found');
+      }
+
       if (status === 'completed' && updatedPayment.scheduleId) {
         await PaymentScheduleService.linkPaymentToSchedule(paymentId, updatedPayment.scheduleId);
       } else if (status === 'completed' && !updatedPayment.scheduleId) {
@@ -426,8 +457,8 @@ export class PaymentService {
   }
 
   /**
- * Auto-match payment to oldest unpaid schedule
- */
+   * Auto-match payment to oldest unpaid schedule
+   */
   private static async autoMatchPaymentToSchedule(payment: any) {
     try {
       // Find oldest unpaid schedule for this lease
@@ -440,7 +471,7 @@ export class PaymentService {
             eq(paymentSchedules.isPaid, false)
           )
         )
-        .orderBy(paymentSchedules.paymentNumber)
+        .orderBy(asc(paymentSchedules.paymentNumber))
         .limit(1);
 
       if (oldestUnpaid) {
@@ -453,15 +484,119 @@ export class PaymentService {
           })
           .where(eq(payments.id, payment.id));
 
-        // Mark schedule as paid
-        await PaymentScheduleService.linkPaymentToSchedule(
-          payment.id,
-          oldestUnpaid.id
-        );
+        // Mark schedule as paid if sufficient amount
+        const paymentVal = parseFloat(payment.amount);
+        const scheduleVal = parseFloat(oldestUnpaid.amount);
+
+        // Check if fully paid (or close enough)
+        if (paymentVal >= scheduleVal - 0.01) {
+          await PaymentScheduleService.linkPaymentToSchedule(
+            payment.id,
+            oldestUnpaid.id
+          );
+        }
       }
     } catch (error) {
       console.error('Error auto-matching payment to schedule:', error);
       // Don't throw - this is a best-effort operation
+    }
+  }
+
+  /**
+   * Distribute payment amount to schedules (Upfront/Partial logic)
+   */
+  private static async distributePaymentToSchedules(
+    leaseId: string,
+    amount: number,
+    transactionId: string,
+    paymentMethod: string,
+    paidDate: Date,
+    notes?: string
+  ) {
+    try {
+      // 1. Get all unpaid schedules ordered by date
+      const unpaidSchedules = await db
+        .select()
+        .from(paymentSchedules)
+        .where(
+          and(
+            eq(paymentSchedules.leaseId, leaseId),
+            eq(paymentSchedules.isPaid, false)
+          )
+        )
+        .orderBy(asc(paymentSchedules.paymentNumber));
+
+      let remainingAmount = amount;
+      const createdPayments = [];
+
+      // 2. Iterate through schedules
+      for (const schedule of unpaidSchedules) {
+        if (remainingAmount <= 0) break;
+
+        const scheduleAmount = parseFloat(schedule.amount);
+
+        // Calculate how much of this schedule has already been paid (partial payments)
+        const existingPayments = await db
+          .select({ amount: payments.amount })
+          .from(payments)
+          .where(eq(payments.scheduleId, schedule.id));
+
+        const alreadyPaid = existingPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+        const remainingDue = scheduleAmount - alreadyPaid;
+
+        if (remainingDue <= 0.01) continue; // Skip if fully paid (floating point tolerance)
+
+        // Determine allocation for this schedule
+        const allocation = Math.min(remainingAmount, remainingDue);
+
+        // Create payment record
+        const [payment] = await db
+          .insert(payments)
+          .values({
+            leaseId,
+            scheduleId: schedule.id,
+            amount: allocation.toString(),
+            transactionId,
+            paymentMethod,
+            status: 'completed',
+            paidDate,
+            notes: notes ? `${notes} (Schedule #${schedule.paymentNumber})` : undefined,
+            dueDate: schedule.dueDate,
+          })
+          .returning();
+
+        createdPayments.push(payment);
+        remainingAmount -= allocation;
+
+        // Check if fully paid
+        if (Math.abs(allocation - remainingDue) < 0.01) {
+          await PaymentScheduleService.linkPaymentToSchedule(payment.id, schedule.id);
+        }
+      }
+
+      // 3. Handle Overpayment (Credit)
+      if (remainingAmount > 0.01) {
+        const [creditPayment] = await db
+          .insert(payments)
+          .values({
+            leaseId,
+            scheduleId: null, // No specific schedule
+            amount: remainingAmount.toString(),
+            transactionId,
+            paymentMethod,
+            status: 'completed',
+            paidDate,
+            notes: notes ? `${notes} (Overpayment Credit)` : 'Overpayment Credit',
+            dueDate: paidDate,
+          })
+          .returning();
+        createdPayments.push(creditPayment);
+      }
+
+      return createdPayments;
+    } catch (error) {
+      console.error('Error distributing payment to schedules:', error);
+      throw error; // Propagate error
     }
   }
 

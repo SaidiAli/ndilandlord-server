@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { paymentSchedules, leases } from '../db/schema';
+import { paymentSchedules, leases, payments } from '../db/schema';
 import { and, eq, lte, asc } from 'drizzle-orm';
 
 export class PaymentScheduleService {
@@ -177,14 +177,44 @@ export class PaymentScheduleService {
                 .where(eq(paymentSchedules.leaseId, leaseId))
                 .orderBy(paymentSchedules.paymentNumber);
 
+            // Get total paid amount for each schedule
+            // This is N+1, but for a single lease (usually 12-24 records) it's acceptable for now.
+            // Optimization: single aggregate query grouping by scheduleId.
+
+            const scheduleIds = schedule.map(s => s.id);
+            let paidAmounts: Record<string, number> = {};
+
+            if (scheduleIds.length > 0) {
+                const allPayments = await db
+                    .select() // Select all columns for now, simplifiction
+                    .from(payments)
+                    // We can't easily do WHERE IN with Drizzle without importing `inArray`
+                    // Let's iterate or find a better way. 
+                    // Actually, let's just fetch all payments for the lease and aggregate in memory. 
+                    // Much faster than N queries.
+                    .where(eq(payments.leaseId, leaseId));
+
+                scheduleIds.forEach(id => {
+                    paidAmounts[id] = allPayments
+                        .filter(p => p.scheduleId === id && p.status === 'completed')
+                        .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+                });
+            }
+
             const now = new Date();
 
             // Add status to each schedule entry
-            const scheduleWithStatus = schedule.map(entry => ({
-                ...entry,
-                status: this.getPaymentStatus(entry, now),
-                amount: parseFloat(entry.amount),
-            }));
+            const scheduleWithStatus = schedule.map(entry => {
+                const amount = parseFloat(entry.amount);
+                const paid = paidAmounts[entry.id] || 0;
+
+                return {
+                    ...entry,
+                    amount,
+                    paidAmount: paid,
+                    status: this.getPaymentStatus(entry, now, paid, amount),
+                };
+            });
 
             return scheduleWithStatus;
         } catch (error) {
@@ -198,10 +228,18 @@ export class PaymentScheduleService {
      */
     private static getPaymentStatus(
         schedule: any,
-        currentDate: Date
-    ): 'paid' | 'pending' | 'overdue' | 'upcoming' {
-        if (schedule.isPaid) {
+        currentDate: Date,
+        paidAmount: number,
+        totalAmount: number
+    ): 'paid' | 'pending' | 'overdue' | 'upcoming' | 'partial' {
+
+        // If explicitly marked as paid or paid amount covers total
+        if (schedule.isPaid || paidAmount >= totalAmount - 0.01) {
             return 'paid';
+        }
+
+        if (paidAmount > 0) {
+            return 'partial';
         }
 
         const dueDate = new Date(schedule.dueDate);
