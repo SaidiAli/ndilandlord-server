@@ -426,7 +426,7 @@ export class PaymentService {
   }
 
   /**
- * Auto-match payment to oldest unpaid schedule (NEW METHOD)
+ * Auto-match payment to oldest unpaid schedule
  */
   private static async autoMatchPaymentToSchedule(payment: any) {
     try {
