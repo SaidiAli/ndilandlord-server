@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { users, properties, units, leases } from '../db/schema';
+import { users, properties, units, leases, unitAmenities, amenities } from '../db/schema';
 import { eq, and, desc, asc, gte, lte, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { OwnershipService } from '../db/ownership';
@@ -15,6 +15,7 @@ export interface UnitCreationData {
   bathrooms: number;
   squareFeet?: number;
   description?: string;
+  amenityIds?: string[];
 }
 
 export interface UnitUpdateData {
@@ -24,6 +25,7 @@ export interface UnitUpdateData {
   squareFeet?: number;
   isAvailable?: boolean;
   description?: string;
+  amenityIds?: string[];
 }
 
 export interface UnitWithDetails {
@@ -31,6 +33,7 @@ export interface UnitWithDetails {
   property: any;
   currentLease?: any;
   currentTenant?: any;
+  amenities: any[];
   leaseHistory: any[];
   analytics: {
     occupancyRate: number;
@@ -47,6 +50,7 @@ export const unitUpdateSchema = z.object({
   squareFeet: z.number().int().positive('Square feet must be positive').optional(),
   isAvailable: z.boolean().optional(),
   description: z.string().optional(),
+  amenityIds: z.array(z.string().uuid()).optional(),
 });
 
 export const bulkUnitCreationSchema = z.object({
@@ -57,6 +61,7 @@ export const bulkUnitCreationSchema = z.object({
     bathrooms: z.number().min(0),
     squareFeet: z.number().int().positive().optional(),
     description: z.string().optional(),
+    amenityIds: z.array(z.string().uuid()).optional(),
   })).min(1, 'At least one unit is required'),
 });
 
@@ -93,30 +98,34 @@ export class UnitService {
       }
 
       // Create the unit
-      const newUnit = await db
-        .insert(units)
-        .values({
-          propertyId: unitData.propertyId,
-          unitNumber: unitData.unitNumber,
-          bedrooms: unitData.bedrooms,
-          bathrooms: unitData.bathrooms.toString(),
-          squareFeet: unitData.squareFeet,
-          description: unitData.description,
-          isAvailable: true, // New units are always available initially
-        })
-        .returning({
-          id: units.id,
-          propertyId: units.propertyId,
-          unitNumber: units.unitNumber,
-          bedrooms: units.bedrooms,
-          bathrooms: units.bathrooms,
-          squareFeet: units.squareFeet,
-          isAvailable: units.isAvailable,
-          description: units.description,
-          createdAt: units.createdAt,
-        });
+      const newUnit = await db.transaction(async (tx) => {
+        const [createdUnit] = await tx
+          .insert(units)
+          .values({
+            propertyId: unitData.propertyId,
+            unitNumber: unitData.unitNumber,
+            bedrooms: unitData.bedrooms,
+            bathrooms: unitData.bathrooms.toString(),
+            squareFeet: unitData.squareFeet,
+            description: unitData.description,
+            isAvailable: true, // New units are always available initially
+          })
+          .returning();
 
-      return newUnit[0];
+        // Add amenities if provided
+        if (unitData.amenityIds && unitData.amenityIds.length > 0) {
+          await tx.insert(unitAmenities).values(
+            unitData.amenityIds.map(amenityId => ({
+              unitId: createdUnit.id,
+              amenityId,
+            }))
+          );
+        }
+
+        return createdUnit;
+      });
+
+      return newUnit;
     } catch (error) {
       console.error('Error creating unit:', error);
       throw error;
@@ -170,16 +179,7 @@ export class UnitService {
 
       // Filter out units that already exist
       const unitsToCreate = validatedData.units
-        .filter(unit => !existingNumbers.includes(unit.unitNumber))
-        .map(unit => ({
-          propertyId: validatedData.propertyId,
-          unitNumber: unit.unitNumber,
-          bedrooms: unit.bedrooms,
-          bathrooms: unit.bathrooms.toString(),
-          squareFeet: unit.squareFeet,
-          description: unit.description,
-          isAvailable: true,
-        }));
+        .filter(unit => !existingNumbers.includes(unit.unitNumber));
 
       const failedUnits = existingNumbers.map(num => ({
         unitNumber: num,
@@ -189,20 +189,34 @@ export class UnitService {
       let createdUnits: any[] = [];
 
       if (unitsToCreate.length > 0) {
-        createdUnits = await db
-          .insert(units)
-          .values(unitsToCreate)
-          .returning({
-            id: units.id,
-            propertyId: units.propertyId,
-            unitNumber: units.unitNumber,
-            bedrooms: units.bedrooms,
-            bathrooms: units.bathrooms,
-            squareFeet: units.squareFeet,
-            isAvailable: units.isAvailable,
-            description: units.description,
-            createdAt: units.createdAt,
-          });
+        createdUnits = await db.transaction(async (tx) => {
+          const newUnits = [];
+          for (const unit of unitsToCreate) {
+            const [created] = await tx
+              .insert(units)
+              .values({
+                propertyId: validatedData.propertyId,
+                unitNumber: unit.unitNumber,
+                bedrooms: unit.bedrooms,
+                bathrooms: unit.bathrooms.toString(),
+                squareFeet: unit.squareFeet,
+                description: unit.description,
+                isAvailable: true,
+              })
+              .returning();
+
+            if (unit.amenityIds && unit.amenityIds.length > 0) {
+              await tx.insert(unitAmenities).values(
+                unit.amenityIds.map(id => ({
+                  unitId: created.id,
+                  amenityId: id
+                }))
+              );
+            }
+            newUnits.push(created);
+          }
+          return newUnits;
+        });
       }
 
       return {
@@ -228,36 +242,10 @@ export class UnitService {
     try {
       let query = db
         .select({
-          unit: {
-            id: units.id,
-            unitNumber: units.unitNumber,
-            bedrooms: units.bedrooms,
-            bathrooms: units.bathrooms,
-            squareFeet: units.squareFeet,
-            isAvailable: units.isAvailable,
-            description: units.description,
-            createdAt: units.createdAt,
-            updatedAt: units.updatedAt,
-          },
-          property: {
-            id: properties.id,
-            name: properties.name,
-            address: properties.address,
-            city: properties.city,
-          },
-          currentLease: {
-            id: leases.id,
-            status: leases.status,
-            startDate: leases.startDate,
-            endDate: leases.endDate,
-          },
-          tenant: {
-            id: users.id,
-            firstName: users.firstName,
-            lastName: users.lastName,
-            email: users.email,
-            phone: users.phone,
-          },
+          unit: units,
+          property: properties,
+          currentLease: leases,
+          tenant: users,
         })
         .from(units)
         .innerJoin(properties, eq(units.propertyId, properties.id))
@@ -296,36 +284,10 @@ export class UnitService {
       if (whereConditions.length > 1) {
         query = db
           .select({
-            unit: {
-              id: units.id,
-              unitNumber: units.unitNumber,
-              bedrooms: units.bedrooms,
-              bathrooms: units.bathrooms,
-              squareFeet: units.squareFeet,
-              isAvailable: units.isAvailable,
-              description: units.description,
-              createdAt: units.createdAt,
-              updatedAt: units.updatedAt,
-            },
-            property: {
-              id: properties.id,
-              name: properties.name,
-              address: properties.address,
-              city: properties.city,
-            },
-            currentLease: {
-              id: leases.id,
-              status: leases.status,
-              startDate: leases.startDate,
-              endDate: leases.endDate,
-            },
-            tenant: {
-              id: users.id,
-              firstName: users.firstName,
-              lastName: users.lastName,
-              email: users.email,
-              phone: users.phone,
-            },
+            unit: units,
+            property: properties,
+            currentLease: leases,
+            tenant: users,
           })
           .from(units)
           .innerJoin(properties, eq(units.propertyId, properties.id))
@@ -343,32 +305,19 @@ export class UnitService {
 
       const result = await query;
 
-      // Transform the nested result to flat Unit objects with property included
+      // Ideally we would join unitAmenities here, but to avoid N+1 query complexity in a single query with Drizzle without relationships fully loaded, 
+      // we can fetch amenities separately or use relations query if we used query builder.
+      // For now, let's keep it simple and maybe NOT fetch amenities for the list view to keep it fast, 
+      // or fetch them if needed. The list view probably doesn't show all amenities.
+      // Unit details view DOES need them.
+      // Let's stick to the current plan: list view doesn't necessarily need amenities.
+
       return result.map(row => ({
-        id: row.unit.id,
-        propertyId: row.property.id,
-        unitNumber: row.unit.unitNumber,
-        bedrooms: row.unit.bedrooms,
-        bathrooms: parseFloat(row.unit.bathrooms), // Convert string to number
-        squareFeet: row.unit.squareFeet,
-        isAvailable: row.unit.isAvailable,
-        description: row.unit.description,
-        createdAt: row.unit.createdAt,
-        updatedAt: row.unit.updatedAt,
-        property: {
-          id: row.property.id,
-          name: row.property.name,
-          address: row.property.address,
-          city: row.property.city,
-        },
-        // Include current lease and tenant info if available
-        currentLease: row.currentLease?.id ? {
-          id: row.currentLease.id,
-          status: row.currentLease.status,
-          startDate: row.currentLease.startDate,
-          endDate: row.currentLease.endDate,
-        } : undefined,
-        currentTenant: row.tenant?.id ? {
+        ...row.unit,
+        bathrooms: parseFloat(row.unit.bathrooms),
+        property: row.property,
+        currentLease: row.currentLease,
+        currentTenant: row.tenant ? {
           id: row.tenant.id,
           firstName: row.tenant.firstName,
           lastName: row.tenant.lastName,
@@ -396,24 +345,8 @@ export class UnitService {
       // Get unit basic information
       const unitInfo = await db
         .select({
-          unit: {
-            id: units.id,
-            unitNumber: units.unitNumber,
-            bedrooms: units.bedrooms,
-            bathrooms: units.bathrooms,
-            squareFeet: units.squareFeet,
-            isAvailable: units.isAvailable,
-            description: units.description,
-            createdAt: units.createdAt,
-            updatedAt: units.updatedAt,
-          },
-          property: {
-            id: properties.id,
-            name: properties.name,
-            address: properties.address,
-            city: properties.city,
-            postalCode: properties.postalCode,
-          },
+          unit: units,
+          property: properties,
         })
         .from(units)
         .innerJoin(properties, eq(units.propertyId, properties.id))
@@ -429,26 +362,21 @@ export class UnitService {
         return null;
       }
 
+      // Get amenities
+      const unitAmenitiesList = await db
+        .select({
+          id: amenities.id,
+          name: amenities.name
+        })
+        .from(unitAmenities)
+        .innerJoin(amenities, eq(unitAmenities.amenityId, amenities.id))
+        .where(eq(unitAmenities.unitId, unitId));
+
       // Get current active lease and tenant
       const currentLease = await db
         .select({
-          lease: {
-            id: leases.id,
-            startDate: leases.startDate,
-            endDate: leases.endDate,
-            monthlyRent: leases.monthlyRent,
-            deposit: leases.deposit,
-            status: leases.status,
-            terms: leases.terms,
-          },
-          tenant: {
-            id: users.id,
-            firstName: users.firstName,
-            lastName: users.lastName,
-            email: users.email,
-            phone: users.phone,
-            userName: users.userName,
-          },
+          lease: leases,
+          tenant: users
         })
         .from(leases)
         .innerJoin(users, eq(leases.tenantId, users.id))
@@ -463,14 +391,7 @@ export class UnitService {
       // Get lease history
       const leaseHistory = await db
         .select({
-          lease: {
-            id: leases.id,
-            startDate: leases.startDate,
-            endDate: leases.endDate,
-            monthlyRent: leases.monthlyRent,
-            status: leases.status,
-            createdAt: leases.createdAt,
-          },
+          lease: leases,
           tenant: {
             id: users.id,
             firstName: users.firstName,
@@ -486,8 +407,12 @@ export class UnitService {
       const analytics = await this.calculateUnitAnalytics(unitId, leaseHistory);
 
       const unitDetails: UnitWithDetails = {
-        unit: unitInfo[0].unit,
+        unit: {
+          ...unitInfo[0].unit,
+          bathrooms: parseFloat(unitInfo[0].unit.bathrooms)
+        },
         property: unitInfo[0].property,
+        amenities: unitAmenitiesList,
         currentLease: currentLease.length > 0 ? currentLease[0].lease : undefined,
         currentTenant: currentLease.length > 0 ? currentLease[0].tenant : undefined,
         leaseHistory,
@@ -543,6 +468,8 @@ export class UnitService {
 
       // Convert numeric fields to strings for database storage
       const updateData: any = { ...validatedUpdates };
+      delete updateData.amenityIds; // Remove amenityIds from unit update data as it handles separately
+
       if (updateData.bathrooms) {
         updateData.bathrooms = updateData.bathrooms.toString();
       }
@@ -554,23 +481,40 @@ export class UnitService {
       }
       updateData.updatedAt = new Date();
 
-      const updatedUnit = await db
-        .update(units)
-        .set(updateData)
-        .where(eq(units.id, unitId))
-        .returning({
-          id: units.id,
-          propertyId: units.propertyId,
-          unitNumber: units.unitNumber,
-          bedrooms: units.bedrooms,
-          bathrooms: units.bathrooms,
-          squareFeet: units.squareFeet,
-          isAvailable: units.isAvailable,
-          description: units.description,
-          updatedAt: units.updatedAt,
-        });
+      const updatedUnit = await db.transaction(async (tx) => {
+        let uUnit = null;
+        if (Object.keys(updateData).length > 1) { // 1 because updatedAt is always there
+          const [res] = await tx
+            .update(units)
+            .set(updateData)
+            .where(eq(units.id, unitId))
+            .returning();
+          uUnit = res;
+        } else {
+          // Fetch existing if no update to fields
+          const [res] = await tx.select().from(units).where(eq(units.id, unitId));
+          uUnit = res;
+        }
 
-      return updatedUnit[0];
+        // Handle amenity updates
+        if (validatedUpdates.amenityIds) {
+          // Delete existing
+          await tx.delete(unitAmenities).where(eq(unitAmenities.unitId, unitId));
+
+          // Insert new
+          if (validatedUpdates.amenityIds.length > 0) {
+            await tx.insert(unitAmenities).values(
+              validatedUpdates.amenityIds.map(amenityId => ({
+                unitId,
+                amenityId
+              }))
+            );
+          }
+        }
+        return uUnit;
+      });
+
+      return updatedUnit;
     } catch (error) {
       console.error('Error updating unit:', error);
       throw error;
@@ -708,9 +652,14 @@ export class UnitService {
       }
 
       // Delete the unit
-      await db
-        .delete(units)
-        .where(eq(units.id, unitId));
+      // Note: cascades should handle unitAmenities but let's be safe.
+      // Actually Drizzle doesn't do cascades automatically unless defined in DB.
+      // We should check schema.
+
+      await db.transaction(async (tx) => {
+        await tx.delete(unitAmenities).where(eq(unitAmenities.unitId, unitId));
+        await tx.delete(units).where(eq(units.id, unitId));
+      });
 
       return { success: true };
     } catch (error) {

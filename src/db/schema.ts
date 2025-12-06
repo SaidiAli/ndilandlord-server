@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, decimal, integer, boolean, pgEnum, index, unique, AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, decimal, integer, boolean, pgEnum, index, unique, AnyPgColumn, primaryKey } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Enums
@@ -58,6 +58,22 @@ export const units = pgTable('units', {
   index('idx_units_property_id').on(table.propertyId),
   unique('unique_unit_per_property').on(table.propertyId, table.unitNumber),
   index('idx_units_availability').on(table.isAvailable),
+]);
+
+// Amenities table
+export const amenities = pgTable('amenities', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 100 }).notNull().unique(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Unit Amenities Junction table
+export const unitAmenities = pgTable('unit_amenities', {
+  unitId: uuid('unit_id').references(() => units.id).notNull(),
+  amenityId: uuid('amenity_id').references(() => amenities.id).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.unitId, table.amenityId] }),
+  index('idx_unit_amenities_unit_id').on(table.unitId),
 ]);
 
 // Leases table
@@ -171,6 +187,22 @@ export const unitsRelations = relations(units, ({ one, many }) => ({
   }),
   leases: many(leases),
   maintenanceRequests: many(maintenanceRequests),
+  amenities: many(unitAmenities),
+}));
+
+export const amenitiesRelations = relations(amenities, ({ many }) => ({
+  units: many(unitAmenities),
+}));
+
+export const unitAmenitiesRelations = relations(unitAmenities, ({ one }) => ({
+  unit: one(units, {
+    fields: [unitAmenities.unitId],
+    references: [units.id],
+  }),
+  amenity: one(amenities, {
+    fields: [unitAmenities.amenityId],
+    references: [amenities.id],
+  }),
 }));
 
 export const leasesRelations = relations(leases, ({ one, many }) => ({

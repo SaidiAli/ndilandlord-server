@@ -18,6 +18,7 @@ const createUnitSchema = z.object({
   bathrooms: z.number().min(0),
   squareFeet: z.number().int().positive().optional(),
   description: z.string().optional(),
+  amenityIds: z.array(z.string().uuid()).optional(),
 });
 
 const updateUnitSchema = z.object({
@@ -27,6 +28,7 @@ const updateUnitSchema = z.object({
   squareFeet: z.number().int().positive().optional(),
   isAvailable: z.boolean().optional(),
   description: z.string().optional(),
+  amenityIds: z.array(z.string().uuid()).optional(),
 });
 
 const bulkCreateUnitsSchema = z.object({
@@ -37,6 +39,7 @@ const bulkCreateUnitsSchema = z.object({
     bathrooms: z.number().min(0),
     squareFeet: z.number().int().positive().optional(),
     description: z.string().optional(),
+    amenityIds: z.array(z.string().uuid()).optional(),
   })).min(1),
 });
 

@@ -12,6 +12,7 @@
     "db:setup": "tsx src/db/setup.ts setup",
     "db:setup-seed": "tsx src/db/setup.ts setup --seed",
     "db:seed": "tsx src/db/setup.ts seed",
+    "db:seed:amenities": "tsx src/db/seed-amenities.ts",
     "db:indexes": "tsx src/db/setup.ts indexes",
     "db:reset": "tsx src/db/setup.ts reset",
     "db:full": "tsx src/db/setup.ts full",
