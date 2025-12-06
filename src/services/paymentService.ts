@@ -349,6 +349,54 @@ export class PaymentService {
   }
 
   /**
+   * Register a manual payment (e.g. cash, bank transfer)
+   */
+  static async registerManualPayment(data: {
+    leaseId: string;
+    amount: number;
+    paidDate: Date;
+    paymentMethod: string;
+    notes?: string;
+    scheduleId?: string;
+    transactionId?: string;
+  }) {
+    try {
+      // Create transaction ID if not provided (for manual payments)
+      const transactionId = data.transactionId || `MAN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+      // 1. Create the payment record directly as completed
+      const [payment] = await db
+        .insert(payments)
+        .values({
+          leaseId: data.leaseId,
+          scheduleId: data.scheduleId,
+          amount: data.amount.toString(),
+          transactionId: transactionId,
+          paymentMethod: data.paymentMethod,
+          status: 'completed',
+          paidDate: data.paidDate,
+          notes: data.notes,
+          dueDate: data.paidDate, // Default due date to paid date if no schedule
+        })
+        .returning();
+
+      // 2. Handle Schedule Linking
+      if (data.scheduleId) {
+        // Explicit schedule provided
+        await PaymentScheduleService.linkPaymentToSchedule(payment.id, data.scheduleId);
+      } else {
+        // Auto-match if no schedule provided
+        await this.autoMatchPaymentToSchedule(payment);
+      }
+
+      return payment;
+    } catch (error) {
+      console.error('Error registering manual payment:', error);
+      throw new Error('Failed to register manual payment');
+    }
+  }
+
+  /**
    * Update payment status (UPDATED METHOD)
    */
   static async updatePaymentStatus(

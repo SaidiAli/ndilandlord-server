@@ -465,6 +465,52 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
   }
 });
 
+// Manual Payment Registration (Landlord Only)
+router.post('/register', authenticate, authorize('landlord'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+  try {
+    const { leaseId, amount, paidDate, paymentMethod, notes, scheduleId } = req.body;
+
+    // Basic Validation
+    if (!leaseId || !amount || !paidDate || !paymentMethod) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: leaseId, amount, paidDate, paymentMethod',
+      });
+    }
+
+    // Verify ownership (Landlord must own the lease)
+    const isOwner = await OwnershipService.isLandlordOwnerOfLease(req.user!.id, leaseId);
+    if (!isOwner) {
+      return res.status(403).json({
+        success: false,
+        error: 'You do not have permission to register payments for this lease',
+      });
+    }
+
+    const payment = await PaymentService.registerManualPayment({
+      leaseId,
+      amount: parseFloat(amount),
+      paidDate: new Date(paidDate),
+      paymentMethod,
+      notes,
+      scheduleId,
+    });
+
+    res.json({
+      success: true,
+      data: payment,
+      message: 'Payment registered successfully',
+    });
+  } catch (error) {
+    console.error('Error registering payment:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to register payment',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
 
 
 // Get payment status (for polling)
@@ -584,7 +630,7 @@ router.get('/overdue', authenticate, async (req: AuthenticatedRequest, res: Resp
     } else if (user.role === 'landlord' || user.role === 'admin') {
       // Get all overdue payments for landlord's properties
       const landlordLeases = await LeaseService.getLandlordLeases(user.id);
-      
+
       for (const lease of landlordLeases) {
         if (lease.lease.status === 'active') {
           const leaseOverdue = await PaymentScheduleService.getOverduePayments(lease.lease.id);
