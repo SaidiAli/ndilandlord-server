@@ -14,6 +14,7 @@ import paymentRoutes from './routes/payments';
 import landlordRoutes from './routes/landlords';
 import tenantRoutes from './routes/tenant';
 import amenityRoutes from './routes/amenities';
+import paymentScheduleRoutes from './routes/paymentSchedules';
 import './jobs/worker';
 
 dotenv.config();
@@ -58,6 +59,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/landlords', landlordRoutes);
 app.use('/api/tenant', tenantRoutes);
 app.use('/api/amenities', amenityRoutes);
+app.use('/api/payment-schedules', paymentScheduleRoutes);
 
 // Error handling middleware
 app.use(notFound);
