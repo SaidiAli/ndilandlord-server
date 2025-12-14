@@ -1,10 +1,9 @@
 import { db } from '../db';
-import { users, properties, units, leases, payments } from '../db/schema';
-import { eq, and, or, desc, asc, lte, sql, isNotNull } from 'drizzle-orm';
+import { users, properties, units, leases } from '../db/schema';
+import { eq, and, or, desc, lte, sql, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { OwnershipService } from '../db/ownership';
 import { PaymentScheduleService } from './paymentScheduleService';
-import { paymentSchedules } from '../db/schema';
 
 /**
  * Lease service for complete lease management workflow
@@ -216,6 +215,9 @@ export class LeaseService {
 
       // Get detailed lease information
       const detailedLease = await this.getLeaseDetails(landlordId, newLease[0].id);
+
+      // Generate the payment schedule upon activation
+      await PaymentScheduleService.generatePaymentSchedule(newLease[0].id);
 
       return detailedLease;
     } catch (error) {
@@ -637,11 +639,6 @@ export class LeaseService {
    */
   static async activateLease(landlordId: string, leaseId: string) {
     try {
-      const ownsLease = await OwnershipService.isLandlordOwnerOfLease(landlordId, leaseId);
-      if (!ownsLease) {
-        throw new Error('You can only activate your own leases');
-      }
-
       const [lease] = await db.select().from(leases).where(eq(leases.id, leaseId)).limit(1);
       if (!lease) throw new Error('Lease not found');
       if (lease.status !== 'draft') throw new Error('Only draft leases can be activated');
@@ -650,9 +647,6 @@ export class LeaseService {
         await tx.update(leases).set({ status: 'active', updatedAt: new Date() }).where(eq(leases.id, leaseId));
         await tx.update(units).set({ isAvailable: false, updatedAt: new Date() }).where(eq(units.id, lease.unitId));
       });
-
-      // Generate the payment schedule upon activation
-      await PaymentScheduleService.generatePaymentSchedule(leaseId);
 
       return await this.getLeaseWithSchedule(landlordId, leaseId);
     } catch (error) {

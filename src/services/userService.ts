@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { OwnershipService } from '../db/ownership';
 import { OptimizedQueries } from './optimizedQueries';
+import { PaymentScheduleService } from './paymentScheduleService';
 
 /**
  * User service for landlord-tenant management in the new workflow
@@ -181,6 +182,10 @@ export class UserService {
         .update(units)
         .set({ isAvailable: false, updatedAt: new Date() })
         .where(eq(units.id, data.unitId));
+
+
+      // Generate the payment schedule upon activation
+      await PaymentScheduleService.generatePaymentSchedule(newLease[0].id);
 
       return {
         tenant,
