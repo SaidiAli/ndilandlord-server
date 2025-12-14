@@ -424,11 +424,6 @@ export class PaymentService {
           data.notes
         );
 
-        // Return the first payment for response consistency, 
-        // or wrap in a way the frontend understands?
-        // The frontend expects a single payment object usually, but for a split payment it might be tricky.
-        // Let's return the first one as a proxy, or the "primary" one.
-        // Or simply the last one created.
         return createdPayments[0];
       }
     } catch (error) {

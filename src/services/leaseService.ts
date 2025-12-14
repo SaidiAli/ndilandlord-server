@@ -136,28 +136,12 @@ export const leaseRenewalSchema = z.object({
 
 export class LeaseService {
   /**
-   * Create a new lease (landlord workflow)
+   * Create a new lease
    */
   static async createLease(landlordId: string, leaseData: LeaseCreationData) {
     try {
       // Validate input
       const validatedData = leaseCreationSchema.parse(leaseData);
-
-      // Verify landlord owns the unit
-      const ownsUnit = await OwnershipService.isLandlordOwnerOfUnit(
-        landlordId,
-        validatedData.unitId
-      );
-
-      if (!ownsUnit) {
-        throw new Error('You can only create leases for your own units');
-      }
-
-      // Verify tenant belongs to the landlord (if not admin scenario)
-      const ownsTenant = await OwnershipService.isLandlordOwnerOfTenant(
-        landlordId,
-        validatedData.tenantId
-      );
 
       // Check for overlapping leases (active or draft leases only)
       const overlappingLeases = await db

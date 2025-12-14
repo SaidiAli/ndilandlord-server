@@ -58,6 +58,7 @@ router.get('/dashboard/complete', authenticate, authorize('landlord'), async (re
 
     const expiringLeases = await LeaseService.getLandlordLeases(landlordId);
     const leasesExpiringSoon = expiringLeases.filter(l => {
+      if (!l.lease.endDate) return false;
       const endDate = new Date(l.lease.endDate);
       return endDate >= now && endDate <= thirtyDaysFromNow && l.lease.status === 'active';
     });
@@ -83,7 +84,7 @@ router.get('/dashboard/complete', authenticate, authorize('landlord'), async (re
           propertyName: l.property.name,
           unitNumber: l.unit.unitNumber,
           endDate: l.lease.endDate,
-          daysUntilExpiry: Math.ceil((new Date(l.lease.endDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
+          daysUntilExpiry: Math.ceil((new Date(l.lease.endDate!).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
         })),
       },
       payments: {
@@ -313,6 +314,7 @@ router.get('/alerts', authenticate, authorize('landlord'), async (req: Authentic
 
     // Expiring leases (next 30 days)
     const expiringLeases = leases.filter(l => {
+      if (!l.lease.endDate) return false;
       const endDate = new Date(l.lease.endDate);
       return endDate >= now && endDate <= thirtyDaysFromNow && l.lease.status === 'active';
     });
@@ -340,9 +342,9 @@ router.get('/alerts', authenticate, authorize('landlord'), async (req: Authentic
         propertyName: l.property.name,
         unitNumber: l.unit.unitNumber,
         endDate: l.lease.endDate,
-        daysUntilExpiry: Math.ceil((new Date(l.lease.endDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
+        daysUntilExpiry: Math.ceil((new Date(l.lease.endDate!).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
         monthlyRent: parseFloat(l.lease.monthlyRent),
-        priority: Math.ceil((new Date(l.lease.endDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) <= 7 ? 'high' : 'medium',
+        priority: Math.ceil((new Date(l.lease.endDate!).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) <= 7 ? 'high' : 'medium',
       })),
       vacantUnits: unitsAnalytics.availableUnits,
       recommendations: [
