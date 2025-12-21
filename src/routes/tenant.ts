@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { 
+import {
   authenticate
 } from '../middleware/auth';
 import { AuthenticatedRequest, ApiResponse } from '../types';
@@ -15,8 +15,8 @@ const router = Router();
 
 // Middleware to ensure user is a tenant with active lease
 const requireActiveTenant = async (
-  req: AuthenticatedRequest, 
-  res: Response<ApiResponse>, 
+  req: AuthenticatedRequest,
+  res: Response<ApiResponse>,
   next: Function
 ) => {
   try {
@@ -57,7 +57,8 @@ const requireActiveTenant = async (
 // Get tenant dashboard data
 router.get('/dashboard', authenticate, requireActiveTenant, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
-    const dashboardData = await TenantService.getTenantDashboard(req.user!.id);
+    const leaseId = req.query.leaseId as string | undefined;
+    const dashboardData = await TenantService.getTenantDashboard(req.user!.id, leaseId);
 
     if (!dashboardData) {
       return res.status(404).json({
@@ -84,7 +85,8 @@ router.get('/dashboard', authenticate, requireActiveTenant, async (req: Authenti
 // Get tenant lease information
 router.get('/lease', authenticate, requireActiveTenant, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
-    const leaseInfo = await TenantService.getTenantLeaseInfo(req.user!.id);
+    const leaseId = req.query.leaseId as string | undefined;
+    const leaseInfo = await TenantService.getTenantLeaseInfo(req.user!.id, leaseId);
 
     if (!leaseInfo) {
       return res.status(404).json({
@@ -103,6 +105,26 @@ router.get('/lease', authenticate, requireActiveTenant, async (req: Authenticate
     res.status(500).json({
       success: false,
       error: 'Failed to fetch tenant lease information',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// Get all tenant leases
+router.get('/leases', authenticate, requireActiveTenant, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+  try {
+    const leases = await TenantService.getAllTenantLeases(req.user!.id);
+
+    res.json({
+      success: true,
+      data: leases,
+      message: 'Tenant leases retrieved successfully',
+    });
+  } catch (error) {
+    console.error('Error fetching tenant leases:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch tenant leases',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
@@ -140,7 +162,7 @@ router.get('/payments', authenticate, requireActiveTenant, async (req: Authentic
   try {
     // First get tenant's lease ID
     const leaseInfo = await TenantService.getTenantLeaseInfo(req.user!.id);
-    
+
     if (!leaseInfo) {
       return res.status(404).json({
         success: false,
@@ -171,7 +193,7 @@ router.get('/payments/balance', authenticate, requireActiveTenant, async (req: A
   try {
     // First get tenant's lease ID
     const leaseInfo = await TenantService.getTenantLeaseInfo(req.user!.id);
-    
+
     if (!leaseInfo) {
       return res.status(404).json({
         success: false,

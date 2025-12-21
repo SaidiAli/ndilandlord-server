@@ -18,7 +18,7 @@ export interface TenantDashboardData {
   lease: {
     id: string;
     startDate: string;
-    endDate: string;
+    endDate: string | null;
     monthlyRent: number;
     deposit: number;
     status: string;
@@ -101,7 +101,7 @@ export class TenantService {
   /**
    * Get comprehensive tenant dashboard data
    */
-  static async getTenantDashboard(tenantId: string): Promise<TenantDashboardData | null> {
+  static async getTenantDashboard(tenantId: string, leaseId?: string): Promise<TenantDashboardData | null> {
     try {
       // Get tenant basic info
       const tenantInfo = await db
@@ -154,9 +154,10 @@ export class TenantService {
         .where(
           and(
             eq(leases.tenantId, tenantId),
-            eq(leases.status, 'active')
+            leaseId ? eq(leases.id, leaseId) : eq(leases.status, 'active')
           )
         )
+        .orderBy(desc(leases.startDate))
         .limit(1);
 
       let leaseData = null;
@@ -171,7 +172,7 @@ export class TenantService {
         leaseData = {
           id: info.leaseId,
           startDate: info.leaseStartDate.toISOString(),
-          endDate: info.leaseEndDate.toISOString(),
+          endDate: info.leaseEndDate ? info.leaseEndDate.toISOString() : null,
           monthlyRent: parseFloat(info.leaseMonthlyRent),
           deposit: parseFloat(info.leaseDeposit),
           status: info.leaseStatus,
@@ -265,14 +266,18 @@ export class TenantService {
       if (leaseData) {
         const now = new Date();
         const startDate = new Date(leaseData.startDate);
-        const endDate = new Date(leaseData.endDate);
-        
+        const endDate = leaseData.endDate ? new Date(leaseData.endDate) : null;
+
         // Days in lease
         quickStats.daysInLease = Math.max(0, Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
-        
+
         // Lease progress (percentage)
-        const totalLeaseDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-        quickStats.leaseProgress = totalLeaseDays > 0 ? Math.min(100, (quickStats.daysInLease / totalLeaseDays) * 100) : 0;
+        if (endDate) {
+          const totalLeaseDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+          quickStats.leaseProgress = totalLeaseDays > 0 ? Math.min(100, (quickStats.daysInLease / totalLeaseDays) * 100) : 0;
+        } else {
+          quickStats.leaseProgress = 0;
+        }
 
         // Payment statistics
         const allPayments = paymentInfo.recentPayments;
@@ -327,13 +332,13 @@ export class TenantService {
   /**
    * Get detailed tenant lease information
    */
-  static async getTenantLeaseInfo(tenantId: string): Promise<TenantLeaseInfo | null> {
+  static async getTenantLeaseInfo(tenantId: string, leaseId?: string): Promise<TenantLeaseInfo | null> {
     try {
       // Get current active lease with full details
       const leaseInfo = await db
         .select({
           lease: leases,
-          unit: units, 
+          unit: units,
           property: properties,
           landlordId: properties.landlordId,
         })
@@ -343,9 +348,10 @@ export class TenantService {
         .where(
           and(
             eq(leases.tenantId, tenantId),
-            eq(leases.status, 'active')
+            leaseId ? eq(leases.id, leaseId) : eq(leases.status, 'active')
           )
         )
+        .orderBy(desc(leases.startDate))
         .limit(1);
 
       if (leaseInfo.length === 0) {
@@ -495,9 +501,6 @@ export class TenantService {
     }
   }
 
-  /**
-   * Verify tenant has access to data (has active lease)
-   */
   static async verifyTenantAccess(tenantId: string): Promise<boolean> {
     try {
       const activeLease = await db
@@ -515,6 +518,34 @@ export class TenantService {
     } catch (error) {
       console.error('Error verifying tenant access:', error);
       return false;
+    }
+  }
+
+  /**
+   * Get all leases for a tenant
+   */
+  static async getAllTenantLeases(tenantId: string) {
+    try {
+      const tenantLeases = await db
+        .select({
+          id: leases.id,
+          startDate: leases.startDate,
+          endDate: leases.endDate,
+          status: leases.status,
+          monthlyRent: leases.monthlyRent,
+          unitNumber: units.unitNumber,
+          propertyName: properties.name,
+        })
+        .from(leases)
+        .innerJoin(units, eq(leases.unitId, units.id))
+        .innerJoin(properties, eq(units.propertyId, properties.id))
+        .where(eq(leases.tenantId, tenantId))
+        .orderBy(desc(leases.startDate));
+
+      return tenantLeases;
+    } catch (error) {
+      console.error('Error fetching all tenant leases:', error);
+      throw new Error('Failed to fetch tenant leases');
     }
   }
 }
