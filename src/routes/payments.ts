@@ -739,6 +739,7 @@ router.get('/:id/receipt', authenticate, async (req: AuthenticatedRequest, res: 
         endDate: payment.lease.endDate,
       } : null,
       generatedAt: new Date().toISOString(),
+      dueDate: payment.payment.dueDate,
       companyInfo: {
         name: 'NDI Landlord',
         address: 'Kampala, Uganda',
