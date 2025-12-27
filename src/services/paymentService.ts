@@ -143,15 +143,8 @@ export class PaymentService {
         errors.push('Minimum payment amount is UGX 10,000');
       }
 
-      // Check maximum amount (cannot exceed outstanding balance)
-      if (amount > balance.outstandingBalance) {
-        errors.push(`Amount cannot exceed outstanding balance of UGX ${balance.outstandingBalance.toLocaleString()}`);
-        return {
-          isValid: false,
-          errors,
-          suggestedAmount: balance.outstandingBalance,
-        };
-      }
+      // Check maximum amount - REMOVED to allow overpayments
+      // if (amount > balance.outstandingBalance) { ... }
 
       return {
         isValid: errors.length === 0,
