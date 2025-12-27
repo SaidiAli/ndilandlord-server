@@ -88,7 +88,6 @@ export interface TenantPropertyInfo {
     phone: string;
     email?: string;
   };
-  amenities: string[];
   rules?: string;
   emergencyContacts: Array<{
     name: string;
@@ -418,7 +417,7 @@ export class TenantService {
   /**
    * Get tenant property information
    */
-  static async getTenantPropertyInfo(tenantId: string): Promise<TenantPropertyInfo | null> {
+  static async getTenantPropertyInfo(tenantId: string, leaseId?: string): Promise<TenantPropertyInfo | null> {
     try {
       // Get property info through current lease
       const propertyInfo = await db
@@ -433,7 +432,7 @@ export class TenantService {
         .where(
           and(
             eq(leases.tenantId, tenantId),
-            eq(leases.status, 'active')
+            leaseId ? eq(leases.id, leaseId) : eq(leases.status, 'active')
           )
         )
         .limit(1);
@@ -471,28 +470,13 @@ export class TenantService {
         property: info.property,
         unit: info.unit,
         landlord,
-        amenities: [
-          'Water Supply',
-          'Electricity',
-          'Parking',
-        ], // Placeholder - this could be stored in database later
         rules: info.property.description || 'Please contact your landlord for property rules and regulations.',
         emergencyContacts: [
           {
             name: landlord.name,
             phone: landlord.phone,
             type: 'Landlord',
-          },
-          {
-            name: 'Emergency Services',
-            phone: '999',
-            type: 'Emergency',
-          },
-          {
-            name: 'Police',
-            phone: '999',
-            type: 'Police',
-          },
+          }
         ],
       };
     } catch (error) {
@@ -535,6 +519,7 @@ export class TenantService {
           monthlyRent: leases.monthlyRent,
           unitNumber: units.unitNumber,
           propertyName: properties.name,
+          createdAt: leases.createdAt,
         })
         .from(leases)
         .innerJoin(units, eq(leases.unitId, units.id))

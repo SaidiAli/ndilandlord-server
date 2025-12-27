@@ -133,7 +133,8 @@ router.get('/leases', authenticate, requireActiveTenant, async (req: Authenticat
 // Get tenant property information
 router.get('/property', authenticate, requireActiveTenant, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
-    const propertyInfo = await TenantService.getTenantPropertyInfo(req.user!.id);
+    const leaseId = req.query.leaseId as string | undefined;
+    const propertyInfo = await TenantService.getTenantPropertyInfo(req.user!.id, leaseId);
 
     if (!propertyInfo) {
       return res.status(404).json({
