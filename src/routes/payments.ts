@@ -414,15 +414,11 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
     const externalId = `NDI_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
     const iotecRequest = {
-      category: 'MobileMoney' as const,
-      currency: 'UGX' as const,
-      walletId: process.env.IOTEC_WALLET_ID || '5e83b187-801e-410e-b76e-f491928547e0',
       externalId,
       payer: phoneNumber,
       amount,
       payerNote: `Rent payment for lease ${leaseId}`,
       payeeNote: `Verit - Lease ${leaseId}`,
-      transactionChargesCategory: 'ChargeWallet' as const,
     };
 
     const iotecResponse = await IoTecService.initiateCollection(iotecRequest);
