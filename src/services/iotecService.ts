@@ -127,7 +127,7 @@ export class IoTecService {
       currency: 'UGX',
       wallet: {
         id: this.WALLET_ID,
-        name: 'NDI Landlord Wallet',
+        name: 'Verit Wallet',
       },
       chargeModel: null,
       createdBy: 'system',
@@ -190,7 +190,7 @@ export class IoTecService {
 
     const payload = {
       sub: this.CLIENT_ID,
-      name: 'NDI Landlord System',
+      name: 'Verit System',
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour
       scope: 'collections disbursements',

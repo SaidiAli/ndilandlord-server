@@ -1,4 +1,4 @@
-# NDI Landlord 2 - Property Management Backend
+# Verit - Property Management Backend
 
 A multi-tenant SaaS platform for rental property management built with Express.js, TypeScript, and Drizzle ORM.
 

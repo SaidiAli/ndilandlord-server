@@ -421,7 +421,7 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
       payer: phoneNumber,
       amount,
       payerNote: `Rent payment for lease ${leaseId}`,
-      payeeNote: `NDI Landlord - Lease ${leaseId}`,
+      payeeNote: `Verit - Lease ${leaseId}`,
       transactionChargesCategory: 'ChargeWallet' as const,
     };
 
@@ -720,7 +720,7 @@ router.get('/:id/receipt', authenticate, async (req: AuthenticatedRequest, res: 
 
     // Generate receipt data
     const receipt = {
-      receiptNumber: `NDI-${payment.payment.id.substring(0, 8).toUpperCase()}`,
+      receiptNumber: `VRT-${payment.payment.id.substring(0, 8).toUpperCase()}`,
       paymentId: payment.payment.id,
       transactionId: payment.payment.transactionId,
       amount: parseFloat(payment.payment.amount),
@@ -741,9 +741,9 @@ router.get('/:id/receipt', authenticate, async (req: AuthenticatedRequest, res: 
       generatedAt: new Date().toISOString(),
       dueDate: payment.payment.dueDate,
       companyInfo: {
-        name: 'NDI Landlord',
+        name: 'Verit',
         address: 'Kampala, Uganda',
-        email: 'receipts@ndilandlord.com',
+        email: 'receipts@verit.com',
         phone: '+256 700 000 000',
       },
     };

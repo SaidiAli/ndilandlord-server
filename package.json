@@ -1,5 +1,5 @@
 {
-  "name": "ndilandlord2-backend",
+  "name": "verit-backend",
   "version": "1.0.0",
   "description": "Property management system backend API",
   "main": "dist/app.js",
