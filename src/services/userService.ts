@@ -315,27 +315,6 @@ export class UserService {
         return updatedUser[0];
       }
 
-      // Admin can update anyone
-      if (requestingUserRole === 'admin') {
-        const updatedUser = await db
-          .update(users)
-          .set({ ...updates, updatedAt: new Date() })
-          .where(eq(users.id, targetUserId))
-          .returning({
-            id: users.id,
-            email: users.email,
-            userName: users.userName,
-            firstName: users.firstName,
-            lastName: users.lastName,
-            phone: users.phone,
-            role: users.role,
-            isActive: users.isActive,
-            updatedAt: users.updatedAt,
-          });
-
-        return updatedUser[0];
-      }
-
       // Landlord can update their tenants
       if (requestingUserRole === 'landlord') {
         const ownsTenant = await OwnershipService.isLandlordOwnerOfTenant(

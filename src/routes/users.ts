@@ -5,7 +5,6 @@ import {
   requireTenantSelfAccess,
 } from '../middleware/auth';
 import { AuthenticatedRequest, ApiResponse } from '../types';
-import { UserService } from '../services/userService';
 import { validateBody } from '../middleware/validation';
 import { z } from 'zod';
 import { createTenantController, createTenantWithLease, getAllUsersController, getLandlordTenantsController, getTenantDetailsController, getUserByIdController, updateUserController, updateUserProfileController } from '../controllers/users';
