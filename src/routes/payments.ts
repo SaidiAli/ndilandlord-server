@@ -64,9 +64,20 @@ router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedR
 
       const totalPages = Math.ceil(landlordPayments.length / (filters.limit || landlordPayments.length));
 
+      const enrichedPaginatedPayments = await Promise.all(
+        paginatedPayments.map(async row => {
+          const schedules = await PaymentScheduleService.getPaymentLinkedSchedules(row.payment.id);
+
+          return {
+            ...row,
+            appliedSchedules: schedules
+          }
+        })
+      )
+
       return res.json({
         success: true,
-        data: paginatedPayments,
+        data: enrichedPaginatedPayments,
         pagination: {
           page: Math.floor(startIndex / (filters.limit || landlordPayments.length)) + 1,
           limit: filters.limit || landlordPayments.length,
@@ -75,17 +86,6 @@ router.get('/', authenticate, injectLandlordFilter(), async (req: AuthenticatedR
         },
         message: 'Landlord payments retrieved successfully',
       } as PaginatedResponse<any>);
-    }
-
-    if (user.role === 'admin') {
-      // Admins can see all payments
-      const payments = await PaymentService.getAllPayments(filters);
-
-      return res.json({
-        success: true,
-        data: payments,
-        message: 'All payments retrieved successfully',
-      });
     }
 
     res.status(403).json({
@@ -110,36 +110,25 @@ router.get('/landlord/overview', authenticate, authorize('landlord'), async (req
     const now = new Date();
     const pendingPayments = landlordPayments.filter(p => p.payment.status === 'pending');
     const completedPayments = landlordPayments.filter(p => p.payment.status === 'completed');
-    const overduePayments = landlordPayments.filter(p =>
-      p.payment.status === 'pending' && new Date(p.payment.dueDate) < now
-    );
+    const failedPayments = landlordPayments.filter(p => p.payment.status === 'failed');
 
     const totalPendingAmount = pendingPayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0);
     const totalCompletedAmount = completedPayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0);
-    const totalOverdueAmount = overduePayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0);
+    const totalFailedAmount = failedPayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0);
 
     const overview = {
       summary: {
         totalPayments: landlordPayments.length,
         pendingPayments: pendingPayments.length,
         completedPayments: completedPayments.length,
-        overduePayments: overduePayments.length,
+        failedPayments: failedPayments.length,
         totalPendingAmount,
         totalCompletedAmount,
-        totalOverdueAmount,
+        totalFailedAmount,
         collectionRate: landlordPayments.length > 0
           ? (completedPayments.length / landlordPayments.length) * 100
           : 0,
       },
-      overdueDetails: overduePayments.map(p => ({
-        paymentId: p.payment.id,
-        tenantName: `${p.tenant.firstName} ${p.tenant.lastName}`,
-        propertyName: p.property.name,
-        unitNumber: p.unit.unitNumber,
-        amount: parseFloat(p.payment.amount),
-        dueDate: p.payment.dueDate,
-        daysPastDue: Math.ceil((now.getTime() - new Date(p.payment.dueDate).getTime()) / (1000 * 60 * 60 * 24)),
-      })),
       recentPayments: completedPayments
         .sort((a, b) => new Date(b.payment.paidDate || b.payment.createdAt).getTime() - new Date(a.payment.paidDate || a.payment.createdAt).getTime())
         .slice(0, 10)
@@ -423,7 +412,7 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
 
     const iotecResponse = await IoTecService.initiateCollection(iotecRequest);
 
-    // UPDATED: Pass the scheduleId when creating the payment record
+    // Create the payment record
     const payment = await PaymentService.createPayment({
       leaseId,
       amount,
@@ -431,7 +420,6 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
       paymentMethod: 'mobile_money',
       phoneNumber: phoneNumber,
       mobileMoneyProvider: provider,
-      scheduleId,
     });
 
     const response = {
@@ -735,7 +723,6 @@ router.get('/:id/receipt', authenticate, async (req: AuthenticatedRequest, res: 
         endDate: payment.lease.endDate,
       } : null,
       generatedAt: new Date().toISOString(),
-      dueDate: payment.payment.dueDate,
       companyInfo: {
         name: 'Verit',
         address: 'Kampala, Uganda',

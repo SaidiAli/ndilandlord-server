@@ -110,7 +110,6 @@ export const paymentSchedules = pgTable('payment_schedules', {
   periodStart: timestamp('period_start').notNull(),
   periodEnd: timestamp('period_end').notNull(),
   isPaid: boolean('is_paid').default(false).notNull(),
-  paidPaymentId: uuid('paid_payment_id').references((): AnyPgColumn => payments.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => [
@@ -124,9 +123,7 @@ export const paymentSchedules = pgTable('payment_schedules', {
 export const payments = pgTable('payments', {
   id: uuid('id').primaryKey().defaultRandom(),
   leaseId: uuid('lease_id').references(() => leases.id).notNull(),
-  scheduleId: uuid('schedule_id').references(() => paymentSchedules.id),
   amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
-  dueDate: timestamp('due_date').notNull(),
   paidDate: timestamp('paid_date'),
   status: paymentStatusEnum('status').default('pending').notNull(),
   paymentMethod: varchar('payment_method', { length: 50 }),
@@ -139,8 +136,20 @@ export const payments = pgTable('payments', {
 }, (table) => [
   index('idx_payments_lease_id').on(table.leaseId),
   index('idx_payments_status').on(table.status),
-  index('idx_payments_due_date').on(table.dueDate),
   index('idx_payments_transaction_id').on(table.transactionId),
+]);
+
+// Payment Schedule Payments Junction table (Many-to-Many)
+export const paymentSchedulePayments = pgTable('payment_schedule_payments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  paymentId: uuid('payment_id').references(() => payments.id, { onDelete: 'cascade' }).notNull(),
+  scheduleId: uuid('schedule_id').references(() => paymentSchedules.id, { onDelete: 'cascade' }).notNull(),
+  amountApplied: decimal('amount_applied', { precision: 10, scale: 2 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('idx_payment_schedule_payments_payment_id').on(table.paymentId),
+  index('idx_payment_schedule_payments_schedule_id').on(table.scheduleId),
+  unique('unique_payment_schedule').on(table.paymentId, table.scheduleId)
 ]);
 
 // Maintenance Requests table
@@ -222,24 +231,29 @@ export const leasesRelations = relations(leases, ({ one, many }) => ({
   }),
 }));
 
-export const paymentSchedulesRelations = relations(paymentSchedules, ({ one }) => ({
+export const paymentSchedulesRelations = relations(paymentSchedules, ({ one, many }) => ({
   lease: one(leases, {
     fields: [paymentSchedules.leaseId],
     references: [leases.id],
   }),
-  payment: one(payments, {
-    fields: [paymentSchedules.paidPaymentId],
-    references: [payments.id],
-  }),
+  paymentSchedulePayments: many(paymentSchedulePayments),
 }));
 
-export const paymentsRelations = relations(payments, ({ one }) => ({
+export const paymentsRelations = relations(payments, ({ one, many }) => ({
   lease: one(leases, {
     fields: [payments.leaseId],
     references: [leases.id],
   }),
+  paymentSchedulePayments: many(paymentSchedulePayments),
+}));
+
+export const paymentSchedulePaymentsRelations = relations(paymentSchedulePayments, ({ one }) => ({
+  payment: one(payments, {
+    fields: [paymentSchedulePayments.paymentId],
+    references: [payments.id],
+  }),
   schedule: one(paymentSchedules, {
-    fields: [payments.scheduleId],
+    fields: [paymentSchedulePayments.scheduleId],
     references: [paymentSchedules.id],
   }),
 }));

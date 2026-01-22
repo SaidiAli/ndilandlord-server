@@ -47,10 +47,9 @@ router.get('/dashboard/complete', authenticate, authorize('landlord'), async (re
 
     // Calculate payment analytics
     const now = new Date();
-    const overduePayments = paymentOverview.filter(p =>
-      p.payment.status === 'pending' && new Date(p.payment.dueDate) < now
-    );
-    const totalOverdueAmount = overduePayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0);
+    // Note: Overdue logic moved to payment schedules
+    const pendingPayments = paymentOverview.filter(p => p.payment.status === 'pending');
+    const totalPendingAmount = pendingPayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0);
 
     // Calculate lease expiration alerts (next 30 days)
     const thirtyDaysFromNow = new Date();
@@ -67,8 +66,8 @@ router.get('/dashboard/complete', authenticate, authorize('landlord'), async (re
       summary: {
         ...propertyDashboard.summary,
         totalTenants: tenantsList.length,
-        overduePayments: overduePayments.length,
-        totalOverdueAmount,
+        pendingPayments: pendingPayments.length,
+        totalPendingAmount,
         leasesExpiringSoon: leasesExpiringSoon.length,
       },
       properties: propertyDashboard.properties,
@@ -92,20 +91,22 @@ router.get('/dashboard/complete', authenticate, authorize('landlord'), async (re
           .reduce((sum, p) => sum + parseFloat(p.payment.amount), 0),
         pendingAmount: paymentOverview.filter(p => p.payment.status === 'pending')
           .reduce((sum, p) => sum + parseFloat(p.payment.amount), 0),
-        overdueDetails: overduePayments.map(p => ({
-          paymentId: p.payment.id,
-          tenantName: `${p.tenant.firstName} ${p.tenant.lastName}`,
-          amount: parseFloat(p.payment.amount),
-          daysPastDue: Math.ceil((now.getTime() - new Date(p.payment.dueDate).getTime()) / (1000 * 60 * 60 * 24)),
-          propertyName: p.property.name,
-          unitNumber: p.unit.unitNumber,
-        })),
+        recentPayments: paymentOverview.filter(p => p.payment.status === 'completed')
+          .slice(0, 5)
+          .map(p => ({
+            paymentId: p.payment.id,
+            tenantName: `${p.tenant.firstName} ${p.tenant.lastName}`,
+            amount: parseFloat(p.payment.amount),
+            paidDate: p.payment.paidDate,
+            propertyName: p.property.name,
+            unitNumber: p.unit.unitNumber,
+          })),
       },
       alerts: {
-        overduePayments: overduePayments.length,
+        pendingPayments: pendingPayments.length,
         expiredLeases: leasesExpiringSoon.length,
         vacantUnits: unitsAnalytics.availableUnits,
-        totalAlerts: overduePayments.length + leasesExpiringSoon.length + unitsAnalytics.availableUnits,
+        totalAlerts: pendingPayments.length + leasesExpiringSoon.length + unitsAnalytics.availableUnits,
       },
       recentActivity: {
         newLeases: leaseAnalytics.activeLeases,
@@ -264,8 +265,8 @@ router.post('/reports/financial', authenticate, authorize('landlord'), validateB
           unitNumber: p.unit.unitNumber,
           amount: parseFloat(p.payment.amount),
           status: p.payment.status,
-          dueDate: p.payment.dueDate,
           paidDate: p.payment.paidDate,
+          createdAt: p.payment.createdAt,
         })),
       }),
       ...(reportType === 'tax' && {
@@ -307,10 +308,8 @@ router.get('/alerts', authenticate, authorize('landlord'), async (req: Authentic
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
 
-    // Overdue payments
-    const overduePayments = payments.filter(p =>
-      p.payment.status === 'pending' && new Date(p.payment.dueDate) < now
-    );
+    // Pending payments
+    const pendingPayments = payments.filter(p => p.payment.status === 'pending');
 
     // Expiring leases (next 30 days)
     const expiringLeases = leases.filter(l => {
@@ -321,20 +320,19 @@ router.get('/alerts', authenticate, authorize('landlord'), async (req: Authentic
 
     const alerts = {
       summary: {
-        total: overduePayments.length + expiringLeases.length + unitsAnalytics.availableUnits,
-        overdue: overduePayments.length,
+        total: pendingPayments.length + expiringLeases.length + unitsAnalytics.availableUnits,
+        pending: pendingPayments.length,
         expiring: expiringLeases.length,
         vacant: unitsAnalytics.availableUnits,
       },
-      overduePayments: overduePayments.map(p => ({
+      pendingPayments: pendingPayments.map(p => ({
         paymentId: p.payment.id,
         tenantName: `${p.tenant.firstName} ${p.tenant.lastName}`,
         propertyName: p.property.name,
         unitNumber: p.unit.unitNumber,
         amount: parseFloat(p.payment.amount),
-        dueDate: p.payment.dueDate,
-        daysPastDue: Math.ceil((now.getTime() - new Date(p.payment.dueDate).getTime()) / (1000 * 60 * 60 * 24)),
-        priority: Math.ceil((now.getTime() - new Date(p.payment.dueDate).getTime()) / (1000 * 60 * 60 * 24)) > 30 ? 'high' : 'medium',
+        status: p.payment.status,
+        createdAt: p.payment.createdAt,
       })),
       expiringLeases: expiringLeases.map(l => ({
         leaseId: l.lease.id,
@@ -348,7 +346,7 @@ router.get('/alerts', authenticate, authorize('landlord'), async (req: Authentic
       })),
       vacantUnits: unitsAnalytics.availableUnits,
       recommendations: [
-        ...(overduePayments.length > 0 ? ['Contact tenants with overdue payments'] : []),
+        ...(pendingPayments.length > 0 ? ['Follow up on pending payments'] : []),
         ...(expiringLeases.length > 0 ? ['Prepare lease renewals for expiring leases'] : []),
         ...(unitsAnalytics.availableUnits > 0 ? ['Market vacant units to potential tenants'] : []),
       ],
@@ -390,9 +388,7 @@ router.get('/quick-stats', authenticate, authorize('landlord'), async (req: Auth
       return paymentDate >= thisMonth && p.payment.status === 'completed';
     });
 
-    const overduePayments = payments.filter(p =>
-      p.payment.status === 'pending' && new Date(p.payment.dueDate) < now
-    );
+    const pendingPaymentsCount = payments.filter(p => p.payment.status === 'pending');
 
     const quickStats = {
       properties: properties.length,
@@ -400,11 +396,11 @@ router.get('/quick-stats', authenticate, authorize('landlord'), async (req: Auth
       occupiedUnits: units.filter(u => u.currentLease?.id).length,
       totalTenants: tenants.length,
       thisMonthRevenue: thisMonthPayments.reduce((sum, p) => sum + parseFloat(p.payment.amount), 0),
-      overduePayments: overduePayments.length,
+      pendingPayments: pendingPaymentsCount.length,
       occupancyRate: units.length > 0
         ? Math.round((units.filter(u => u.currentLease?.id).length / units.length) * 100)
         : 0,
-      alerts: overduePayments.length, // Simplified alert count
+      alerts: pendingPaymentsCount.length, // Simplified alert count
     };
 
     res.json({

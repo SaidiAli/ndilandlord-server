@@ -12,7 +12,6 @@ dotenv.config();
  * Complete database setup script
  * - Runs migrations
  * - Applies performance indexes
- * - Optionally seeds data
  */
 
 const connectionString = config.database.url;

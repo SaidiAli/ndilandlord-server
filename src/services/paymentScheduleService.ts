@@ -1,6 +1,6 @@
 import { db } from '../db';
-import { paymentSchedules, leases, payments } from '../db/schema';
-import { and, eq, lte, asc } from 'drizzle-orm';
+import { paymentSchedules, leases, payments, paymentSchedulePayments } from '../db/schema';
+import { and, eq, lte, asc, sum, sql } from 'drizzle-orm';
 
 export class PaymentScheduleService {
     /**
@@ -146,15 +146,57 @@ export class PaymentScheduleService {
     }
 
     /**
-     * Link a payment to its schedule
+     * Link a payment to its schedule with amount applied
      */
-    static async linkPaymentToSchedule(paymentId: string, scheduleId: string) {
+    static async linkPaymentToSchedule(paymentId: string, scheduleId: string, amountApplied?: number) {
         try {
+            // Get schedule and payment info to determine amount
+            const [schedule] = await db
+                .select()
+                .from(paymentSchedules)
+                .where(eq(paymentSchedules.id, scheduleId))
+                .limit(1);
+
+            if (!schedule) {
+                throw new Error('Payment schedule not found');
+            }
+
+            const [payment] = await db
+                .select()
+                .from(payments)
+                .where(eq(payments.id, paymentId))
+                .limit(1);
+
+            if (!payment) {
+                throw new Error('Payment not found');
+            }
+
+            // Determine amount to apply
+            const scheduleAmount = parseFloat(schedule.amount);
+            const paymentAmount = parseFloat(payment.amount);
+            const amountToApply = amountApplied || Math.min(paymentAmount, scheduleAmount);
+
+            // Insert into junction table
+            await db.insert(paymentSchedulePayments).values({
+                paymentId,
+                scheduleId,
+                amountApplied: amountToApply.toString(),
+            });
+
+            // Calculate total paid amount for this schedule
+            const paidAmountResult = await db
+                .select({ total: sum(paymentSchedulePayments.amountApplied) })
+                .from(paymentSchedulePayments)
+                .where(eq(paymentSchedulePayments.scheduleId, scheduleId));
+
+            const totalPaid = parseFloat(paidAmountResult[0]?.total || '0');
+
+            // Update isPaid flag if fully paid
+            const isPaid = totalPaid >= scheduleAmount - 0.01;
             await db
                 .update(paymentSchedules)
                 .set({
-                    isPaid: true,
-                    paidPaymentId: paymentId,
+                    isPaid,
                     updatedAt: new Date(),
                 })
                 .where(eq(paymentSchedules.id, scheduleId));
@@ -178,26 +220,31 @@ export class PaymentScheduleService {
                 .orderBy(paymentSchedules.paymentNumber);
 
             // Get total paid amount for each schedule
-            // This is N+1, but for a single lease (usually 12-24 records) it's acceptable for now.
-            // Optimization: single aggregate query grouping by scheduleId.
-
             const scheduleIds = schedule.map(s => s.id);
             let paidAmounts: Record<string, number> = {};
 
             if (scheduleIds.length > 0) {
-                const allPayments = await db
-                    .select() // Select all columns for now, simplifiction
-                    .from(payments)
-                    // We can't easily do WHERE IN with Drizzle without importing `inArray`
-                    // Let's iterate or find a better way. 
-                    // Actually, let's just fetch all payments for the lease and aggregate in memory. 
-                    // Much faster than N queries.
-                    .where(eq(payments.leaseId, leaseId));
+                // Fetch all payments applied to these schedules
+                const junctionRecords = await db
+                    .select({
+                        scheduleId: paymentSchedulePayments.scheduleId,
+                        amountApplied: paymentSchedulePayments.amountApplied,
+                    })
+                    .from(paymentSchedulePayments)
+                    .innerJoin(payments, eq(paymentSchedulePayments.paymentId, payments.id))
+                    .where(
+                        and(
+                            sql`${paymentSchedulePayments.scheduleId} IN (${sql.join(scheduleIds.map(id => sql`${id}`), sql`, `)})`,
+                            eq(payments.status, 'completed')
+                        )
+                    );
 
-                scheduleIds.forEach(id => {
-                    paidAmounts[id] = allPayments
-                        .filter(p => p.scheduleId === id && p.status === 'completed')
-                        .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+                // Aggregate amounts by schedule
+                junctionRecords.forEach(record => {
+                    if (!paidAmounts[record.scheduleId]) {
+                        paidAmounts[record.scheduleId] = 0;
+                    }
+                    paidAmounts[record.scheduleId] += parseFloat(record.amountApplied);
                 });
             }
 
@@ -221,6 +268,29 @@ export class PaymentScheduleService {
             console.error('Error fetching payment schedule:', error);
             throw error;
         }
+    }
+
+    static getPaymentLinkedSchedules = async (paymentId: string) => {
+        const schedules = await db
+            .select({
+                scheduleId: paymentSchedulePayments.scheduleId,
+                amountApplied: paymentSchedulePayments.amountApplied,
+                paymentNumber: paymentSchedules.paymentNumber,
+                periodStart: paymentSchedules.periodStart,
+                periodEnd: paymentSchedules.periodEnd,
+                scheduledAmount: paymentSchedules.amount,
+            })
+            .from(paymentSchedulePayments)
+            .innerJoin(paymentSchedules, eq(paymentSchedulePayments.scheduleId, paymentSchedules.id))
+            .where(eq(paymentSchedulePayments.paymentId, paymentId));
+
+        return schedules.map(s => ({
+            scheduleId: s.scheduleId,
+            paymentNumber: s.paymentNumber,
+            amountApplied: parseFloat(s.amountApplied),
+            scheduledAmount: parseFloat(s.scheduledAmount),
+            period: `${new Date(s.periodStart).toLocaleDateString()} - ${new Date(s.periodEnd).toLocaleDateString()}`,
+        }));
     }
 
     /**
@@ -278,6 +348,66 @@ export class PaymentScheduleService {
             return nextPayment || null;
         } catch (error) {
             console.error('Error fetching next payment:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Apply a partial payment to a schedule
+     */
+    static async applyPartialPayment(paymentId: string, scheduleId: string, amount: number) {
+        try {
+            const [schedule] = await db
+                .select()
+                .from(paymentSchedules)
+                .where(eq(paymentSchedules.id, scheduleId))
+                .limit(1);
+
+            if (!schedule) {
+                throw new Error('Payment schedule not found');
+            }
+
+            // Get current paid amount for this schedule
+            const paidAmountResult = await db
+                .select({ total: sum(paymentSchedulePayments.amountApplied) })
+                .from(paymentSchedulePayments)
+                .where(eq(paymentSchedulePayments.scheduleId, scheduleId));
+
+            const currentPaid = parseFloat(paidAmountResult[0]?.total || '0');
+            const scheduleAmount = parseFloat(schedule.amount);
+            const remaining = scheduleAmount - currentPaid;
+
+            if (remaining <= 0.01) {
+                throw new Error('Payment schedule is already fully paid');
+            }
+
+            const amountToApply = Math.min(amount, remaining);
+
+            // Insert junction record
+            await db.insert(paymentSchedulePayments).values({
+                paymentId,
+                scheduleId,
+                amountApplied: amountToApply.toString(),
+            });
+
+            // Update isPaid flag if now fully paid
+            const newTotal = currentPaid + amountToApply;
+            if (newTotal >= scheduleAmount - 0.01) {
+                await db
+                    .update(paymentSchedules)
+                    .set({
+                        isPaid: true,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(paymentSchedules.id, scheduleId));
+            }
+
+            return {
+                amountApplied: amountToApply,
+                remainingOnSchedule: scheduleAmount - newTotal,
+            };
+        } catch (error) {
+            console.error('Error applying partial payment:', error);
             throw error;
         }
     }

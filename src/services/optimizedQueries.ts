@@ -14,10 +14,10 @@ export interface LandlordDashboardStats {
   totalTenants: number;
   totalMonthlyRevenue: number;
   occupancyRate: number;
-  overduePayments: number;
-  totalOverdueAmount: number;
+  pendingPayments: number;
+  totalPendingAmount: number;
   completedPaymentsThisMonth: number;
-  pendingPaymentsThisMonth: number;
+  completedAmountThisMonth: number;
 }
 
 export interface PropertyWithFullDetails {
@@ -66,10 +66,10 @@ export class OptimizedQueries {
         occupiedUnits: sql<number>`COUNT(CASE WHEN ${units.isAvailable} = false THEN 1 END)`.as('occupied_units'),
         totalTenants: sql<number>`COUNT(DISTINCT CASE WHEN ${leases.status} = 'active' THEN ${leases.tenantId} END)`.as('total_tenants'),
         totalMonthlyRevenue: sql<number>`SUM(CASE WHEN ${leases.status} = 'active' THEN ${leases.monthlyRent}::numeric ELSE 0 END)`.as('total_monthly_revenue'),
-        overduePayments: sql<number>`COUNT(CASE WHEN ${payments.status} = 'pending' AND ${payments.dueDate} < NOW() - INTERVAL '5 days' THEN 1 END)`.as('overdue_payments'),
-        totalOverdueAmount: sql<number>`SUM(CASE WHEN ${payments.status} = 'pending' AND ${payments.dueDate} < NOW() - INTERVAL '5 days' THEN ${payments.amount}::numeric ELSE 0 END)`.as('total_overdue_amount'),
+        pendingPayments: sql<number>`COUNT(CASE WHEN ${payments.status} = 'pending' THEN 1 END)`.as('pending_payments'),
+        totalPendingAmount: sql<number>`SUM(CASE WHEN ${payments.status} = 'pending' THEN ${payments.amount}::numeric ELSE 0 END)`.as('total_pending_amount'),
         completedPaymentsThisMonth: sql<number>`COUNT(CASE WHEN ${payments.status} = 'completed' AND ${payments.paidDate} >= ${thisMonthStart} THEN 1 END)`.as('completed_payments_this_month'),
-        pendingPaymentsThisMonth: sql<number>`COUNT(CASE WHEN ${payments.status} = 'pending' AND ${payments.dueDate} >= ${thisMonthStart} THEN 1 END)`.as('pending_payments_this_month'),
+        completedAmountThisMonth: sql<number>`SUM(CASE WHEN ${payments.status} = 'completed' AND ${payments.paidDate} >= ${thisMonthStart} THEN ${payments.amount}::numeric ELSE 0 END)`.as('completed_amount_this_month'),
       })
       .from(properties)
       .leftJoin(units, eq(properties.id, units.propertyId))
@@ -87,10 +87,10 @@ export class OptimizedQueries {
       totalTenants: Number(stats.totalTenants) || 0,
       totalMonthlyRevenue: Number(stats.totalMonthlyRevenue) || 0,
       occupancyRate: stats.totalUnits > 0 ? (Number(stats.occupiedUnits) / Number(stats.totalUnits)) * 100 : 0,
-      overduePayments: Number(stats.overduePayments) || 0,
-      totalOverdueAmount: Number(stats.totalOverdueAmount) || 0,
+      pendingPayments: Number(stats.pendingPayments) || 0,
+      totalPendingAmount: Number(stats.totalPendingAmount) || 0,
       completedPaymentsThisMonth: Number(stats.completedPaymentsThisMonth) || 0,
-      pendingPaymentsThisMonth: Number(stats.pendingPaymentsThisMonth) || 0,
+      completedAmountThisMonth: Number(stats.completedAmountThisMonth) || 0,
     };
   }
 
@@ -230,7 +230,7 @@ export class OptimizedQueries {
         .select({
           totalPaid: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'completed' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('total_paid'),
           lastPaymentDate: sql<string>`MAX(CASE WHEN ${payments.status} = 'completed' THEN ${payments.paidDate} END)`.as('last_payment_date'),
-          overdueAmount: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'pending' AND ${payments.dueDate} < NOW() - INTERVAL '5 days' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('overdue_amount'),
+          pendingAmount: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'pending' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('pending_amount'),
         })
         .from(payments)
         .innerJoin(leases, eq(payments.leaseId, leases.id))
@@ -254,9 +254,9 @@ export class OptimizedQueries {
         })),
         paymentSummary: {
           totalPaid: Number(summary?.totalPaid) || 0,
-          outstandingBalance: Number(summary?.overdueAmount) || 0,
+          outstandingBalance: Number(summary?.pendingAmount) || 0,
           lastPaymentDate: summary?.lastPaymentDate || undefined,
-          paymentStatus: Number(summary?.overdueAmount) > 0 ? 'overdue' : 'current',
+          paymentStatus: Number(summary?.pendingAmount) > 0 ? 'overdue' : 'current',
         },
       });
     }
@@ -298,11 +298,11 @@ export class OptimizedQueries {
     const overallAnalytics = await db
       .select({
         totalRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'completed' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('total_revenue'),
-        pendingRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'pending' AND ${payments.dueDate} >= NOW() - INTERVAL '5 days' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('pending_revenue'),
-        overdueRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'pending' AND ${payments.dueDate} < NOW() - INTERVAL '5 days' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('overdue_revenue'),
+        pendingRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'pending' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('pending_revenue'),
+        failedRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${payments.status} = 'failed' THEN ${payments.amount}::numeric ELSE 0 END), 0)`.as('failed_revenue'),
         completedPayments: sql<number>`COUNT(CASE WHEN ${payments.status} = 'completed' THEN 1 END)`.as('completed_payments'),
-        pendingPayments: sql<number>`COUNT(CASE WHEN ${payments.status} = 'pending' AND ${payments.dueDate} >= NOW() - INTERVAL '5 days' THEN 1 END)`.as('pending_payments'),
-        overduePayments: sql<number>`COUNT(CASE WHEN ${payments.status} = 'pending' AND ${payments.dueDate} < NOW() - INTERVAL '5 days' THEN 1 END)`.as('overdue_payments'),
+        pendingPayments: sql<number>`COUNT(CASE WHEN ${payments.status} = 'pending' THEN 1 END)`.as('pending_payments'),
+        failedPayments: sql<number>`COUNT(CASE WHEN ${payments.status} = 'failed' THEN 1 END)`.as('failed_payments'),
       })
       .from(payments)
       .innerJoin(leases, eq(payments.leaseId, leases.id))
@@ -362,10 +362,10 @@ export class OptimizedQueries {
     return {
       totalRevenue: Number(analytics.totalRevenue) || 0,
       pendingRevenue: Number(analytics.pendingRevenue) || 0,
-      overdueRevenue: Number(analytics.overdueRevenue) || 0,
+      overdueRevenue: Number(analytics.failedRevenue) || 0,
       completedPayments: Number(analytics.completedPayments) || 0,
       pendingPayments: Number(analytics.pendingPayments) || 0,
-      overduePayments: Number(analytics.overduePayments) || 0,
+      overduePayments: Number(analytics.failedPayments) || 0,
       monthlyTrend: monthlyTrend.map(row => ({
         month: row.month,
         revenue: Number(row.revenue) || 0,
