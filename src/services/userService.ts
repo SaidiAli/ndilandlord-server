@@ -249,8 +249,6 @@ export class UserService {
           unit: {
             id: units.id,
             unitNumber: units.unitNumber,
-            bedrooms: units.bedrooms,
-            bathrooms: units.bathrooms,
             squareFeet: units.squareFeet,
           },
           property: {

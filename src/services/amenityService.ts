@@ -1,47 +1,103 @@
+import { AmenityType, CreateAmenityInput } from '../common/types';
 import { db } from '../db';
 import { amenities } from '../db/schema';
-import { eq } from 'drizzle-orm';
-import { z } from 'zod';
-
-export const createAmenitySchema = z.object({
-    name: z.string().min(1, 'Amenity name is required'),
-});
+import { eq, or } from 'drizzle-orm';
 
 export class AmenityService {
     /**
      * Get all amenities
      */
     static async getAllAmenities() {
-        try {
-            const allAmenities = await db.select().from(amenities).orderBy(amenities.name);
-            return allAmenities;
-        } catch (error) {
-            console.error('Error fetching amenities:', error);
-            throw error;
-        }
+        return db.select().from(amenities).orderBy(amenities.name);
     }
 
     /**
-     * Create a new amenity (if it doesn't exist)
+     * Get amenities by type (for filtering based on property type)
      */
-    static async createAmenity(name: string) {
-        try {
-            // Check if exists
-            const existing = await db
-                .select()
-                .from(amenities)
-                .where(eq(amenities.name, name))
-                .limit(1);
+    static async getAmenitiesByType(type: AmenityType) {
+        return db
+            .select()
+            .from(amenities)
+            .where(
+                or(
+                    eq(amenities.type, type),
+                    eq(amenities.type, 'common')
+                )
+            )
+            .orderBy(amenities.name);
+    }
 
-            if (existing.length > 0) {
-                return existing[0];
-            }
+    /**
+     * Get amenities for residential properties
+     */
+    static async getResidentialAmenities() {
+        return this.getAmenitiesByType('residential');
+    }
 
-            const newAmenity = await db.insert(amenities).values({ name }).returning();
-            return newAmenity[0];
-        } catch (error) {
-            console.error('Error creating amenity:', error);
-            throw error;
+    /**
+     * Get amenities for commercial properties
+     */
+    static async getCommercialAmenities() {
+        return this.getAmenitiesByType('commercial');
+    }
+
+    /**
+     * Create a new amenity
+     */
+    static async createAmenity(data: CreateAmenityInput) {
+        // Check if exists
+        const [existing] = await db
+            .select()
+            .from(amenities)
+            .where(eq(amenities.name, data.name))
+            .limit(1);
+
+        if (existing) {
+            return existing;
         }
+
+        const [newAmenity] = await db
+            .insert(amenities)
+            .values({
+                name: data.name,
+                type: data.type || 'common',
+            })
+            .returning();
+
+        return newAmenity;
+    }
+
+    /**
+     * Get amenity by ID
+     */
+    static async getAmenityById(id: string) {
+        const [amenity] = await db
+            .select()
+            .from(amenities)
+            .where(eq(amenities.id, id))
+            .limit(1);
+
+        return amenity || null;
+    }
+
+    /**
+     * Update amenity
+     */
+    static async updateAmenity(id: string, data: Partial<CreateAmenityInput>) {
+        const [updated] = await db
+            .update(amenities)
+            .set(data)
+            .where(eq(amenities.id, id))
+            .returning();
+
+        return updated || null;
+    }
+
+    /**
+     * Delete amenity
+     */
+    static async deleteAmenity(id: string) {
+        await db.delete(amenities).where(eq(amenities.id, id));
+        return { success: true };
     }
 }

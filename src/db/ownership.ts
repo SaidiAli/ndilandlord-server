@@ -68,8 +68,8 @@ export class OwnershipService {
       .innerJoin(properties, eq(units.propertyId, properties.id))
       .where(
         and(
-          eq(leases.tenantId, tenantId),
-          !isLandlord ? eq(leases.status, 'active') : undefined
+          eq(leases.tenantId, tenantId)
+          // !isLandlord ? eq(leases.status, 'active') : undefined
         )
       )
       .limit(1);

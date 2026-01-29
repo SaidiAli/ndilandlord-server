@@ -153,7 +153,8 @@ export const getUnitById = async (req: AuthenticatedRequest, res: Response<ApiRe
 
 export const createUnit = async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
     try {
-        const unit = await UnitService.createUnit(req.user!.id, req.body);
+        const { propertyId, ...unitData } = req.body;
+        const unit = await UnitService.createUnit(req.user!.id, propertyId, unitData);
 
         res.status(201).json({
             success: true,

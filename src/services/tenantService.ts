@@ -27,8 +27,6 @@ export interface TenantDashboardData {
   unit: {
     id: string;
     unitNumber: string;
-    bedrooms: number;
-    bathrooms: string;
     squareFeet?: number;
     description?: string;
   } | null;
@@ -133,8 +131,6 @@ export class TenantService {
           // Unit data
           unitId: units.id,
           unitNumber: units.unitNumber,
-          unitBedrooms: units.bedrooms,
-          unitBathrooms: units.bathrooms,
           unitSquareFeet: units.squareFeet,
           unitDescription: units.description,
           // Property data
@@ -181,8 +177,6 @@ export class TenantService {
         unitData = {
           id: info.unitId,
           unitNumber: info.unitNumber,
-          bedrooms: info.unitBedrooms,
-          bathrooms: info.unitBathrooms,
           squareFeet: info.unitSquareFeet,
           description: info.unitDescription,
         };

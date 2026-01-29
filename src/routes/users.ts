@@ -31,7 +31,7 @@ const createTenantWithLeaseSchema = z.object({
   unitId: z.string().uuid(),
   leaseData: z.object({
     startDate: z.string().datetime(),
-    endDate: z.string().datetime(),
+    endDate: z.string().datetime().optional(),
     monthlyRent: z.number().positive(),
     deposit: z.number().min(0),
     terms: z.string().optional(),

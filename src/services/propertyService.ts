@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { users, properties, units, leases } from '../db/schema';
+import { users, properties, units, leases, residentialUnitDetails, commercialUnitDetails } from '../db/schema';
 import { eq, and, count, desc, asc } from 'drizzle-orm';
 import { z } from 'zod';
 import { OwnershipService } from '../db/ownership';
@@ -12,9 +12,9 @@ export interface PropertyCreationData {
   name: string;
   address: string;
   city: string;
-  postalCode: string;
+  postalCode?: string;
   description?: string;
-  type?: 'residential' | 'commercial' | 'industrial' | 'office' | 'retail' | 'apartment' | 'house' | 'condo' | 'townhouse' | 'warehouse' | 'mixed_use' | 'land';
+  type?: 'residential' | 'commercial';
   numberOfUnits?: number;
 }
 
@@ -24,7 +24,7 @@ export interface PropertyUpdateData {
   city?: string;
   postalCode?: string;
   description?: string;
-  type?: 'residential' | 'commercial' | 'industrial' | 'office' | 'retail' | 'apartment' | 'house' | 'condo' | 'townhouse' | 'warehouse' | 'mixed_use' | 'land';
+  type?: 'residential' | 'commercial';
   numberOfUnits?: number;
 }
 
@@ -92,6 +92,7 @@ export class PropertyService {
           description: properties.description,
           numberOfUnits: properties.numberOfUnits,
           createdAt: properties.createdAt,
+          type: properties.type,
           updatedAt: properties.updatedAt,
         })
         .from(properties)
@@ -117,6 +118,7 @@ export class PropertyService {
             description: properties.description,
             numberOfUnits: properties.numberOfUnits,
             createdAt: properties.createdAt,
+            type: properties.type,
             updatedAt: properties.updatedAt,
           })
           .from(properties)
@@ -158,17 +160,30 @@ export class PropertyService {
         return null;
       }
 
-      // Get units with lease information
+      // Get units with lease information and type-specific details
       const propertyUnits = await db
         .select({
           unit: {
             id: units.id,
             unitNumber: units.unitNumber,
-            bedrooms: units.bedrooms,
-            bathrooms: units.bathrooms,
             squareFeet: units.squareFeet,
             isAvailable: units.isAvailable,
             description: units.description,
+          },
+          residentialDetails: {
+            unitType: residentialUnitDetails.unitType,
+            bedrooms: residentialUnitDetails.bedrooms,
+            bathrooms: residentialUnitDetails.bathrooms,
+            hasBalcony: residentialUnitDetails.hasBalcony,
+            floorNumber: residentialUnitDetails.floorNumber,
+            isFurnished: residentialUnitDetails.isFurnished,
+          },
+          commercialDetails: {
+            unitType: commercialUnitDetails.unitType,
+            floorNumber: commercialUnitDetails.floorNumber,
+            suiteNumber: commercialUnitDetails.suiteNumber,
+            ceilingHeight: commercialUnitDetails.ceilingHeight,
+            maxOccupancy: commercialUnitDetails.maxOccupancy,
           },
           lease: {
             id: leases.id,
@@ -186,6 +201,8 @@ export class PropertyService {
           },
         })
         .from(units)
+        .leftJoin(residentialUnitDetails, eq(units.id, residentialUnitDetails.unitId))
+        .leftJoin(commercialUnitDetails, eq(units.id, commercialUnitDetails.unitId))
         .leftJoin(
           leases,
           and(

@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run db:generate:*)"
+      "Bash(npm run db:generate:*)",
+      "Bash(npm run db:setup:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": []

@@ -279,8 +279,6 @@ export class LeaseService {
           unit: {
             id: units.id,
             unitNumber: units.unitNumber,
-            bedrooms: units.bedrooms,
-            bathrooms: units.bathrooms,
           },
           property: {
             id: properties.id,
@@ -335,8 +333,6 @@ export class LeaseService {
             unit: {
               id: units.id,
               unitNumber: units.unitNumber,
-              bedrooms: units.bedrooms,
-              bathrooms: units.bathrooms,
             },
             property: {
               id: properties.id,
@@ -396,8 +392,6 @@ export class LeaseService {
           unit: {
             id: units.id,
             unitNumber: units.unitNumber,
-            bedrooms: units.bedrooms,
-            bathrooms: units.bathrooms,
             squareFeet: units.squareFeet,
             isAvailable: units.isAvailable,
             description: units.description,
@@ -545,8 +539,6 @@ export class LeaseService {
           unit: {
             id: units.id,
             unitNumber: units.unitNumber,
-            bedrooms: units.bedrooms,
-            bathrooms: units.bathrooms,
             squareFeet: units.squareFeet,
             description: units.description,
           },
@@ -589,8 +581,6 @@ export class LeaseService {
             unit: {
               id: units.id,
               unitNumber: units.unitNumber,
-              bedrooms: units.bedrooms,
-              bathrooms: units.bathrooms,
               squareFeet: units.squareFeet,
               description: units.description,
             },

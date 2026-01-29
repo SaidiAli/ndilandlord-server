@@ -3,11 +3,21 @@ import { relations } from 'drizzle-orm';
 
 // Enums
 export const userRoleEnum = pgEnum('user_role', ['admin', 'landlord', 'tenant']);
+export const propertyTypeEnum = pgEnum('property_type', ['residential', 'commercial']);
 export const leaseStatusEnum = pgEnum('lease_status', ['draft', 'active', 'expiring', 'expired', 'terminated']);
 export const paymentStatusEnum = pgEnum('payment_status', ['pending', 'completed', 'failed', 'refunded']);
 export const maintenanceStatusEnum = pgEnum('maintenance_status', ['submitted', 'in_progress', 'completed', 'cancelled']);
 export const mobileMoneyProviderEnum = pgEnum('mobile_money_provider', ['mtn', 'airtel', 'm-sente']);
-export const propertyTypeEnum = pgEnum('property_type', ['residential', 'commercial', 'industrial', 'office', 'retail', 'apartment', 'house', 'condo', 'townhouse', 'warehouse', 'mixed_use', 'land']);
+
+// Residential unit subtypes
+export const residentialUnitTypeEnum = pgEnum('residential_unit_type', [
+  'apartment', 'studio', 'house', 'condo', 'townhouse', 'duplex', 'room', 'other'
+]);
+
+// Commercial unit subtypes
+export const commercialUnitTypeEnum = pgEnum('commercial_unit_type', [
+  'office', 'retail', 'warehouse', 'restaurant', 'medical', 'industrial', 'flex_space', 'coworking', 'other'
+]);
 
 // Users table
 export const users = pgTable('users', {
@@ -32,7 +42,7 @@ export const properties = pgTable('properties', {
   city: varchar('city', { length: 100 }).notNull(),
   postalCode: varchar('postal_code', { length: 10 }),
   description: text('description'),
-  type: propertyTypeEnum('type'),
+  type: propertyTypeEnum('type').notNull().default('residential'),
   numberOfUnits: integer('number_of_units').default(1),
   landlordId: uuid('landlord_id').references(() => users.id).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -40,15 +50,14 @@ export const properties = pgTable('properties', {
 }, (table) => [
   index('idx_properties_landlord_id').on(table.landlordId),
   index('idx_properties_city').on(table.city),
+  index('idx_properties_type').on(table.type),
 ]);
 
-// Units table
+// Units table - base table with common fields
 export const units = pgTable('units', {
   id: uuid('id').primaryKey().defaultRandom(),
   propertyId: uuid('property_id').references(() => properties.id).notNull(),
   unitNumber: varchar('unit_number', { length: 50 }).notNull(),
-  bedrooms: integer('bedrooms').notNull(),
-  bathrooms: decimal('bathrooms', { precision: 3, scale: 1 }).notNull(),
   squareFeet: integer('square_feet'),
   isAvailable: boolean('is_available').default(true).notNull(),
   description: text('description'),
@@ -60,17 +69,54 @@ export const units = pgTable('units', {
   index('idx_units_availability').on(table.isAvailable),
 ]);
 
-// Amenities table
+// Residential unit details - type-specific attributes for residential units
+export const residentialUnitDetails = pgTable('residential_unit_details', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  unitId: uuid('unit_id').references(() => units.id, { onDelete: 'cascade' }).notNull().unique(),
+  unitType: residentialUnitTypeEnum('unit_type').notNull().default('apartment'),
+  bedrooms: integer().notNull().default(1),
+  bathrooms: integer().notNull().default(0),
+  hasBalcony: boolean('has_balcony').default(false),
+  floorNumber: integer('floor_number'),
+  isFurnished: boolean('is_furnished').default(false),
+  createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => [
+  index('idx_residential_unit_details_unit_id').on(table.unitId),
+  index('idx_residential_unit_details_type').on(table.unitType),
+  index('idx_residential_unit_details_bedrooms').on(table.bedrooms),
+]);
+
+// Commercial unit details - type-specific attributes for commercial units
+export const commercialUnitDetails = pgTable('commercial_unit_details', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  unitId: uuid('unit_id').references(() => units.id, { onDelete: 'cascade' }).notNull().unique(),
+  unitType: commercialUnitTypeEnum('unit_type').notNull().default('office'),
+  floorNumber: varchar('floor_number', { length: 50 }),
+  suiteNumber: varchar('suite_number', { length: 50 }),
+  ceilingHeight: decimal('ceiling_height', { precision: 5, scale: 2 }), // in feet
+  maxOccupancy: integer('max_occupancy'),
+  createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => [
+  index('idx_commercial_unit_details_unit_id').on(table.unitId),
+  index('idx_commercial_unit_details_type').on(table.unitType),
+]);
+
+// Amenities table - now with category to distinguish residential vs commercial
+export const amenityTypeEnum = pgEnum('amenity_type', ['residential', 'commercial', 'common']);
+
 export const amenities = pgTable('amenities', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 100 }).notNull().unique(),
+  type: amenityTypeEnum('type').notNull().default('common'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_amenities_type').on(table.type),
+]);
 
 // Unit Amenities Junction table
 export const unitAmenities = pgTable('unit_amenities', {
-  unitId: uuid('unit_id').references(() => units.id).notNull(),
-  amenityId: uuid('amenity_id').references(() => amenities.id).notNull(),
+  unitId: uuid('unit_id').references(() => units.id, { onDelete: 'cascade' }).notNull(),
+  amenityId: uuid('amenity_id').references(() => amenities.id, { onDelete: 'cascade' }).notNull(),
 }, (table) => [
   primaryKey({ columns: [table.unitId, table.amenityId] }),
   index('idx_unit_amenities_unit_id').on(table.unitId),
@@ -194,9 +240,31 @@ export const unitsRelations = relations(units, ({ one, many }) => ({
     fields: [units.propertyId],
     references: [properties.id],
   }),
+  residentialDetails: one(residentialUnitDetails, {
+    fields: [units.id],
+    references: [residentialUnitDetails.unitId],
+  }),
+  commercialDetails: one(commercialUnitDetails, {
+    fields: [units.id],
+    references: [commercialUnitDetails.unitId],
+  }),
   leases: many(leases),
   maintenanceRequests: many(maintenanceRequests),
   amenities: many(unitAmenities),
+}));
+
+export const residentialUnitDetailsRelations = relations(residentialUnitDetails, ({ one }) => ({
+  unit: one(units, {
+    fields: [residentialUnitDetails.unitId],
+    references: [units.id],
+  }),
+}));
+
+export const commercialUnitDetailsRelations = relations(commercialUnitDetails, ({ one }) => ({
+  unit: one(units, {
+    fields: [commercialUnitDetails.unitId],
+    references: [units.id],
+  }),
 }));
 
 export const amenitiesRelations = relations(amenities, ({ many }) => ({

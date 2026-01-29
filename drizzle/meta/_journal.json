@@ -43,6 +43,13 @@
       "when": 1768253832535,
       "tag": "0005_clever_malice",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1769333031953,
+      "tag": "0006_silent_domino",
+      "breakpoints": true
     }
   ]
 }
