@@ -77,7 +77,7 @@ export const residentialUnitDetails = pgTable('residential_unit_details', {
   bedrooms: integer().notNull().default(1),
   bathrooms: integer().notNull().default(0),
   hasBalcony: boolean('has_balcony').default(false),
-  floorNumber: integer('floor_number'),
+  floorNumber: varchar('floor_number', { length: 50 }),
   isFurnished: boolean('is_furnished').default(false),
   createdAt: timestamp('created_at').defaultNow().notNull()
 }, (table) => [

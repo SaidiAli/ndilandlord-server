@@ -1,0 +1,2 @@
+ALTER TABLE "commercial_unit_details" ALTER COLUMN "floor_number" SET DATA TYPE varchar(50);--> statement-breakpoint
+ALTER TABLE "residential_unit_details" ALTER COLUMN "floor_number" SET DATA TYPE varchar(50);

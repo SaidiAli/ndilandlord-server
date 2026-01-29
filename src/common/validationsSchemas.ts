@@ -6,14 +6,14 @@ export const residentialUnitDetailsSchema = z.object({
     bedrooms: z.number().int().min(0, 'Bedrooms must be non-negative').default(1),
     bathrooms: z.number().int().min(0, 'Bathrooms must be non-negative').default(1),
     hasBalcony: z.boolean().optional().default(false),
-    floorNumber: z.number().int().optional(),
+    floorNumber: z.string().optional(),
     isFurnished: z.boolean().optional().default(false),
 });
 
 // Commercial unit details schema
 export const commercialUnitDetailsSchema = z.object({
     unitType: z.enum(['office', 'retail', 'warehouse', 'restaurant', 'medical', 'industrial', 'flex_space', 'coworking', 'other']).default('office'),
-    floorNumber: z.number().int().optional(),
+    floorNumber: z.string().optional(),
     suiteNumber: z.string().max(50).optional(),
     ceilingHeight: z.number().positive().optional(),
     maxOccupancy: z.number().int().positive().optional()
