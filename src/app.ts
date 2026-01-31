@@ -15,6 +15,7 @@ import landlordRoutes from './routes/landlords';
 import tenantRoutes from './routes/tenant';
 import amenityRoutes from './routes/amenities';
 import paymentScheduleRoutes from './routes/paymentSchedules';
+import { validateGatewayConfig, getConfiguredGateway } from './gateways';
 import './jobs/worker';
 
 dotenv.config();
@@ -66,8 +67,19 @@ app.use(notFound);
 app.use(errorHandler);
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/health`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Health check: http://localhost:${PORT}/health`);
+
+  // Validate payment gateway configuration
+  try {
+    validateGatewayConfig();
+    console.log(`Payment gateway: ${getConfiguredGateway()}`);
+  } catch (error) {
+    console.warn(`Payment gateway validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.warn('Payment features may not work correctly until gateway is configured.');
+
+    //TODO: notify system admin
+  }
 
   // Schedule the repeatable jobs
   // LeaseJobs.scheduleRepeatableJobs().catch(console.error);

@@ -17,12 +17,15 @@ export interface PaymentBalance {
 }
 
 export interface PaymentInitiation {
+  paymentId: string;
   transactionId: string;
   amount: number;
   status: 'pending' | 'processing';
-  estimatedCompletion: string;
-  iotecReference: string;
+  gateway: 'iotec' | 'yo';
+  gatewayReference: string;
   leaseId: string;
+  scheduleId?: string;
+  statusMessage?: string;
 }
 
 export interface PaymentValidation {
@@ -335,7 +338,7 @@ export class PaymentService {
   }
 
   /**
-     * Create a new payment record (UPDATED METHOD)
+     * Create a new payment record
      */
   static async createPayment(data: {
     leaseId: string;
@@ -343,7 +346,10 @@ export class PaymentService {
     transactionId: string;
     paymentMethod?: string;
     phoneNumber?: string;
-    mobileMoneyProvider?: string;
+    mobileMoneyProvider?: 'mtn' | 'airtel' | 'm-sente';
+    gateway?: 'iotec' | 'yo';
+    gatewayReference?: string;
+    gatewayRawResponse?: string;
   }) {
     try {
       const [payment] = await db
@@ -353,6 +359,11 @@ export class PaymentService {
           amount: data.amount.toString(),
           transactionId: data.transactionId,
           paymentMethod: data.paymentMethod || 'mobile_money',
+          phoneNumber: data.phoneNumber,
+          mobileMoneyProvider: data.mobileMoneyProvider,
+          gateway: data.gateway || 'iotec',
+          gatewayReference: data.gatewayReference,
+          gatewayRawResponse: data.gatewayRawResponse,
           status: 'pending',
         })
         .returning();
@@ -361,6 +372,83 @@ export class PaymentService {
     } catch (error) {
       console.error('Error creating payment:', error);
       throw new Error('Failed to create payment');
+    }
+  }
+
+  /**
+   * Get payment by transaction ID (external reference)
+   */
+  static async getPaymentByTransactionId(transactionId: string) {
+    try {
+      const [payment] = await db
+        .select()
+        .from(payments)
+        .where(eq(payments.transactionId, transactionId))
+        .limit(1);
+
+      return payment || null;
+    } catch (error) {
+      console.error('Error fetching payment by transaction ID:', error);
+      throw new Error('Failed to fetch payment');
+    }
+  }
+
+  /**
+   * Get payment by gateway reference
+   */
+  static async getPaymentByGatewayReference(gatewayReference: string) {
+    try {
+      const [payment] = await db
+        .select()
+        .from(payments)
+        .where(eq(payments.gatewayReference, gatewayReference))
+        .limit(1);
+
+      return payment || null;
+    } catch (error) {
+      console.error('Error fetching payment by gateway reference:', error);
+      throw new Error('Failed to fetch payment');
+    }
+  }
+
+  /**
+   * Update payment with gateway response data
+   */
+  static async updatePaymentGatewayData(
+    paymentId: string,
+    data: {
+      gatewayReference?: string;
+      gatewayRawResponse?: string;
+      status?: 'pending' | 'completed' | 'failed' | 'refunded';
+      paidDate?: Date;
+    }
+  ) {
+    try {
+      const updateData: Record<string, unknown> = { updatedAt: new Date() };
+
+      if (data.gatewayReference !== undefined) {
+        updateData.gatewayReference = data.gatewayReference;
+      }
+      if (data.gatewayRawResponse !== undefined) {
+        updateData.gatewayRawResponse = data.gatewayRawResponse;
+      }
+      if (data.status !== undefined) {
+        updateData.status = data.status;
+      }
+      if (data.paidDate !== undefined) {
+        updateData.paidDate = data.paidDate;
+      }
+
+      const [updatedPayment] = await db
+        .update(payments)
+        .set(updateData)
+        .where(eq(payments.id, paymentId))
+        .returning();
+
+      return updatedPayment || null;
+    } catch (error) {
+      console.error('Error updating payment gateway data:', error);
+      throw new Error('Failed to update payment');
     }
   }
 

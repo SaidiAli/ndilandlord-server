@@ -8,6 +8,7 @@ export const leaseStatusEnum = pgEnum('lease_status', ['draft', 'active', 'expir
 export const paymentStatusEnum = pgEnum('payment_status', ['pending', 'completed', 'failed', 'refunded']);
 export const maintenanceStatusEnum = pgEnum('maintenance_status', ['submitted', 'in_progress', 'completed', 'cancelled']);
 export const mobileMoneyProviderEnum = pgEnum('mobile_money_provider', ['mtn', 'airtel', 'm-sente']);
+export const paymentGatewayEnum = pgEnum('payment_gateway', ['iotec', 'yo']);
 
 // Residential unit subtypes
 export const residentialUnitTypeEnum = pgEnum('residential_unit_type', [
@@ -176,6 +177,9 @@ export const payments = pgTable('payments', {
   mobileMoneyProvider: mobileMoneyProviderEnum('mobile_money_provider'),
   phoneNumber: varchar('phone_number', { length: 20 }),
   transactionId: varchar('transaction_id', { length: 255 }),
+  gateway: paymentGatewayEnum('gateway').default('yo'),
+  gatewayReference: varchar('gateway_reference', { length: 255 }),
+  gatewayRawResponse: text('gateway_raw_response'),
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -183,6 +187,7 @@ export const payments = pgTable('payments', {
   index('idx_payments_lease_id').on(table.leaseId),
   index('idx_payments_status').on(table.status),
   index('idx_payments_transaction_id').on(table.transactionId),
+  index('idx_payments_gateway').on(table.gateway),
 ]);
 
 // Payment Schedule Payments Junction table (Many-to-Many)

@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+import { Router, Response, Request } from 'express';
 import {
   authenticate,
   authorize,
@@ -7,11 +7,18 @@ import {
 } from '../middleware/auth';
 import { AuthenticatedRequest, ApiResponse, PaginatedResponse } from '../types';
 import { PaymentService, paymentInitiationSchema } from '../services/paymentService';
-import { IoTecService } from '../services/iotecService';
 import { OwnershipService } from '../db/ownership';
 import crypto from 'crypto';
 import { LeaseService } from '../services/leaseService';
 import { PaymentScheduleService } from '../services/paymentScheduleService';
+import {
+  getPaymentGateway,
+  getGatewayByName,
+  getConfiguredGateway,
+  GatewayError,
+  TransactionStatus,
+} from '../gateways';
+import type { IpnPayload, FailurePayload } from '../gateways/yo';
 
 const router = Router();
 
@@ -371,7 +378,6 @@ router.get('/:id', authenticate, async (req: AuthenticatedRequest, res: Response
 // Initiate payment (mobile money collection)
 router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
-    // UPDATED: The validation schema now includes an optional scheduleId
     const validationResult = paymentInitiationSchema.safeParse(req.body);
     if (!validationResult.success) {
       return res.status(400).json({
@@ -383,7 +389,7 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
 
     const { leaseId, amount, phoneNumber, provider, scheduleId } = validationResult.data;
 
-    // UPDATED: Validate against a specific schedule if scheduleId is provided
+    // Validate against a specific schedule if scheduleId is provided
     let validation;
     if (scheduleId) {
       validation = await PaymentService.validatePaymentWithSchedule(leaseId, scheduleId, amount);
@@ -400,38 +406,43 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
       });
     }
 
-    const externalId = `NDI_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    // Generate unique external reference for tracking
+    const externalReference = `VRT_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
-    const iotecRequest = {
-      externalId,
-      payer: phoneNumber,
+    // Get the configured gateway and initiate deposit
+    const gateway = getPaymentGateway();
+    const gatewayName = gateway.getProviderName();
+
+    const depositResult = await gateway.deposit({
+      externalReference,
+      phoneNumber,
       amount,
-      payerNote: `Rent payment for lease ${leaseId}`,
-      payeeNote: `Verit - Lease ${leaseId}`,
-    };
+      narrative: `Rent payment for lease ${leaseId.substring(0, 8)}`,
+    });
 
-    const iotecResponse = await IoTecService.initiateCollection(iotecRequest);
-
-    // Create the payment record
+    // Create the payment record with gateway info
     const payment = await PaymentService.createPayment({
       leaseId,
       amount,
-      transactionId: iotecResponse.id,
+      transactionId: externalReference,
       paymentMethod: 'mobile_money',
-      phoneNumber: phoneNumber,
+      phoneNumber,
       mobileMoneyProvider: provider,
+      gateway: gatewayName,
+      gatewayReference: depositResult.gatewayReference,
+      gatewayRawResponse: JSON.stringify(depositResult.rawResponse),
     });
 
     const response = {
       paymentId: payment.id,
-      transactionId: iotecResponse.id,
+      transactionId: externalReference,
       amount,
-      status: 'pending',
-      estimatedCompletion: new Date(Date.now() + 60000).toISOString(),
-      iotecReference: iotecResponse.id,
+      status: depositResult.status === 'pending' ? 'pending' : 'processing',
+      gateway: gatewayName,
+      gatewayReference: depositResult.gatewayReference,
       leaseId,
       scheduleId,
-      statusMessage: iotecResponse.statusMessage,
+      statusMessage: depositResult.message,
     };
 
     res.json({
@@ -441,10 +452,17 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
     });
   } catch (error) {
     console.error('Error initiating payment:', error);
+
+    const errorMessage = error instanceof GatewayError
+      ? `Gateway error: ${error.message}`
+      : error instanceof Error
+        ? error.message
+        : 'Unknown error occurred';
+
     res.status(500).json({
       success: false,
       error: 'Failed to initiate payment',
-      message: error instanceof Error ? error.message : 'Unknown error occurred',
+      message: errorMessage,
     });
   }
 });
@@ -502,48 +520,65 @@ router.get('/status/:transactionId', authenticate, async (req: AuthenticatedRequ
   try {
     const { transactionId } = req.params;
 
-    // Get status from IoTec
-    const iotecStatus = await IoTecService.getTransactionStatus(transactionId);
+    // Find the payment to get gateway info
+    const payment = await PaymentService.getPaymentByTransactionId(transactionId);
 
-    if (!iotecStatus) {
+    if (!payment) {
       return res.status(404).json({
         success: false,
-        error: 'Transaction not found',
+        error: 'Payment not found',
       });
     }
 
-    // Update local payment status if changed
-    if (iotecStatus.status === 'Success') {
-      // Find payment by transaction ID and update
-      const payments = await PaymentService.getAllPayments({});
-      const payment = payments.find(p => p.payment.transactionId === transactionId);
+    // Get the gateway used for this payment
+    const gatewayName = payment.gateway || 'iotec';
+    const gateway = getGatewayByName(gatewayName);
 
-      if (payment && payment.payment.status === 'pending') {
-        await PaymentService.updatePaymentStatus(
-          payment.payment.id,
-          'completed',
-          new Date()
-        );
+    // Check status using gateway reference if available, otherwise use transaction ID
+    const reference = payment.gatewayReference || transactionId;
+    const statusResult = await gateway.checkStatus(reference);
+
+    // Map gateway status to payment status
+    const mapStatus = (status: TransactionStatus): 'pending' | 'completed' | 'failed' => {
+      switch (status) {
+        case 'succeeded':
+          return 'completed';
+        case 'failed':
+          return 'failed';
+        default:
+          return 'pending';
       }
-    } else if (iotecStatus.status === 'Failed') {
-      // Update payment to failed status
-      const payments = await PaymentService.getAllPayments({});
-      const payment = payments.find(p => p.payment.transactionId === transactionId);
+    };
 
-      if (payment && payment.payment.status === 'pending') {
-        await PaymentService.updatePaymentStatus(payment.payment.id, 'failed');
+    const paymentStatus = mapStatus(statusResult.status);
+
+    // Update local payment status if changed
+    if (payment.status === 'pending' && paymentStatus !== 'pending') {
+      await PaymentService.updatePaymentStatus(
+        payment.id,
+        paymentStatus,
+        paymentStatus === 'completed' ? new Date() : undefined
+      );
+
+      // Update gateway raw response
+      if (statusResult.rawResponse) {
+        await PaymentService.updatePaymentGatewayData(payment.id, {
+          gatewayRawResponse: JSON.stringify(statusResult.rawResponse),
+        });
       }
     }
 
     res.json({
       success: true,
       data: {
-        transactionId: iotecStatus.id,
-        status: iotecStatus.status,
-        statusMessage: iotecStatus.statusMessage,
-        amount: iotecStatus.amount,
-        processedAt: iotecStatus.processedAt,
-        vendorTransactionId: iotecStatus.vendorTransactionId,
+        transactionId,
+        gatewayReference: statusResult.gatewayReference,
+        status: statusResult.status,
+        paymentStatus,
+        message: statusResult.message,
+        amount: statusResult.amount,
+        mnoReference: statusResult.mnoReference,
+        gateway: gatewayName,
       },
       message: 'Transaction status retrieved successfully',
     });
@@ -643,9 +678,11 @@ router.get('/overdue', authenticate, async (req: AuthenticatedRequest, res: Resp
   }
 });
 
-// Mock webhook for payment completion (in production, this would be secured)
-router.post('/webhook', async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
+// IoTec webhook for payment completion
+router.post('/webhook', async (req: Request, res: Response<ApiResponse>) => {
   try {
+    console.log('[Webhook] IoTec payload received:', JSON.stringify(req.body));
+
     const { transactionId, status, vendorTransactionId } = req.body;
 
     if (!transactionId || !status) {
@@ -655,17 +692,36 @@ router.post('/webhook', async (req: AuthenticatedRequest, res: Response<ApiRespo
       });
     }
 
-    // Find and update payment
-    const payments = await PaymentService.getAllPayments({});
-    const payment = payments.find(p => p.payment.transactionId === transactionId);
+    // Verify webhook using IoTec gateway
+    const gateway = getGatewayByName('iotec');
+    if (!gateway.verifyWebhook(req.body)) {
+      console.warn('[Webhook] IoTec signature verification failed');
+      // Still return 200 to prevent retries
+      return res.json({
+        success: false,
+        message: 'Signature verification failed',
+      });
+    }
 
-    if (payment) {
+    // Find payment by transaction ID (our external reference)
+    const payment = await PaymentService.getPaymentByTransactionId(transactionId);
+
+    if (payment && payment.status === 'pending') {
       const paymentStatus = status === 'Success' ? 'completed' : 'failed';
       await PaymentService.updatePaymentStatus(
-        payment.payment.id,
+        payment.id,
         paymentStatus,
         status === 'Success' ? new Date() : undefined
       );
+
+      // Store vendor reference
+      if (vendorTransactionId) {
+        await PaymentService.updatePaymentGatewayData(payment.id, {
+          gatewayRawResponse: JSON.stringify(req.body),
+        });
+      }
+
+      console.log(`[Webhook] IoTec payment ${payment.id} updated to ${paymentStatus}`);
     }
 
     res.json({
@@ -673,11 +729,102 @@ router.post('/webhook', async (req: AuthenticatedRequest, res: Response<ApiRespo
       message: 'Webhook processed successfully',
     });
   } catch (error) {
-    console.error('Error processing webhook:', error);
+    console.error('[Webhook] Error processing IoTec webhook:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to process webhook',
     });
+  }
+});
+
+// Yo! IPN (Instant Payment Notification) webhook for successful payments
+router.post('/yo/ipn', async (req: Request, res: Response) => {
+  try {
+    console.log('[Webhook] Yo! IPN payload received:', JSON.stringify(req.body));
+
+    const payload = req.body as IpnPayload;
+
+    // Verify signature using Yo! gateway
+    const gateway = getGatewayByName('yo');
+    if (!gateway.verifyWebhook(payload)) {
+      console.warn('[Webhook] Yo! IPN signature verification failed');
+      // Return 200 to prevent retries, but log the issue
+      return res.status(200).send('OK');
+    }
+
+    // Find payment by external reference
+    const payment = await PaymentService.getPaymentByTransactionId(payload.external_ref);
+
+    if (!payment) {
+      console.warn(`[Webhook] Yo! IPN: Payment not found for external_ref: ${payload.external_ref}`);
+      return res.status(200).send('OK');
+    }
+
+    if (payment.status === 'pending') {
+      // Update payment status to completed
+      await PaymentService.updatePaymentStatus(
+        payment.id,
+        'completed',
+        new Date(payload.date_time || Date.now())
+      );
+
+      // Store the IPN data
+      await PaymentService.updatePaymentGatewayData(payment.id, {
+        gatewayRawResponse: JSON.stringify(payload),
+      });
+
+      console.log(`[Webhook] Yo! IPN: Payment ${payment.id} completed. MNO ref: ${payload.network_ref}`);
+    } else {
+      console.log(`[Webhook] Yo! IPN: Payment ${payment.id} already in status: ${payment.status}`);
+    }
+
+    // Respond with optional SMS narrative
+    res.status(200).send('Thank you for your payment');
+  } catch (error) {
+    console.error('[Webhook] Error processing Yo! IPN:', error);
+    // Return 200 even on error to prevent infinite retries
+    res.status(200).send('Error');
+  }
+});
+
+// Yo! failure webhook for failed payments
+router.post('/yo/failure', async (req: Request, res: Response) => {
+  try {
+    console.log('[Webhook] Yo! failure payload received:', JSON.stringify(req.body));
+
+    const payload = req.body as FailurePayload;
+
+    // Verify signature using Yo! gateway
+    const gateway = getGatewayByName('yo');
+    if (!gateway.verifyWebhook(payload)) {
+      console.warn('[Webhook] Yo! failure signature verification failed');
+      return res.status(200).send('OK');
+    }
+
+    // Find payment by external reference
+    const payment = await PaymentService.getPaymentByTransactionId(payload.failed_transaction_reference);
+
+    if (!payment) {
+      console.warn(`[Webhook] Yo! failure: Payment not found for ref: ${payload.failed_transaction_reference}`);
+      return res.status(200).send('OK');
+    }
+
+    if (payment.status === 'pending') {
+      // Update payment status to failed
+      await PaymentService.updatePaymentStatus(payment.id, 'failed');
+
+      // Store the failure data
+      await PaymentService.updatePaymentGatewayData(payment.id, {
+        gatewayRawResponse: JSON.stringify(payload),
+      });
+
+      console.log(`[Webhook] Yo! failure: Payment ${payment.id} marked as failed`);
+    }
+
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('[Webhook] Error processing Yo! failure webhook:', error);
+    res.status(200).send('Error');
   }
 });
 
