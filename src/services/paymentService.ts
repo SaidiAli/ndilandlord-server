@@ -3,6 +3,7 @@ import { payments, leases, users, paymentSchedules, paymentSchedulePayments } fr
 import { eq, and, desc, asc, sum } from 'drizzle-orm';
 import { z } from 'zod';
 import { PaymentScheduleService } from './paymentScheduleService';
+import { WalletService } from './walletService';
 
 // Types for payment service
 export interface PaymentBalance {
@@ -80,7 +81,7 @@ export class PaymentService {
   }
 
   /**
-   * Calculate payment balance for a specific lease (UPDATED METHOD)
+   * Calculate payment balance for a specific lease
    */
   static async calculateBalance(leaseId: string): Promise<PaymentBalance | null> {
     try {
@@ -145,9 +146,6 @@ export class PaymentService {
       if (amount < 10000) {
         errors.push('Minimum payment amount is UGX 10,000');
       }
-
-      // Check maximum amount - REMOVED to allow overpayments
-      // if (amount > balance.outstandingBalance) { ... }
 
       return {
         isValid: errors.length === 0,
@@ -502,6 +500,9 @@ export class PaymentService {
           await PaymentScheduleService.linkPaymentToSchedule(payment.id, data.scheduleId, amountToApply);
         }
 
+        // Credit landlord wallet for manual payment
+        await this.creditLandlordWallet(payment);
+
         return payment;
       } else {
         // CASE 2: No Specific Schedule (Auto-Distribute / Cascading)
@@ -544,12 +545,40 @@ export class PaymentService {
 
       if (status === 'completed') {
         await this.autoMatchPaymentToSchedule(updatedPayment);
+
+        // Credit the landlord's wallet
+        await this.creditLandlordWallet(updatedPayment);
       }
 
       return updatedPayment;
     } catch (error) {
       console.error('Error updating payment status:', error);
       throw new Error('Failed to update payment status');
+    }
+  }
+
+  /**
+   * Credit landlord wallet when payment is completed
+   */
+  private static async creditLandlordWallet(payment: any) {
+    try {
+      const landlordId = await WalletService.getLandlordIdFromPayment(payment.id);
+      if (!landlordId) {
+        console.warn(`Could not find landlord for payment ${payment.id}`);
+        return;
+      }
+
+      await WalletService.recordDeposit(
+        landlordId,
+        parseFloat(payment.amount),
+        payment.id,
+        `Rent payment - Transaction: ${payment.transactionId || 'N/A'}`
+      );
+
+      console.log(`Credited wallet for landlord ${landlordId} with UGX ${payment.amount}`);
+    } catch (error) {
+      // Log but don't fail the payment update
+      console.error('Error crediting landlord wallet:', error);
     }
   }
 
@@ -679,6 +708,9 @@ export class PaymentService {
         // Log that there's a credit - could be used for future payments
         console.log(`Payment ${payment.id} has ${remainingAmount} in credit for future schedules`);
       }
+
+      // Credit landlord wallet for distributed payment
+      await this.creditLandlordWallet(payment);
 
       return [payment];
     } catch (error) {

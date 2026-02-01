@@ -10,6 +10,10 @@ export const maintenanceStatusEnum = pgEnum('maintenance_status', ['submitted', 
 export const mobileMoneyProviderEnum = pgEnum('mobile_money_provider', ['mtn', 'airtel', 'm-sente']);
 export const paymentGatewayEnum = pgEnum('payment_gateway', ['iotec', 'yo']);
 
+// Wallet enums
+export const walletTransactionTypeEnum = pgEnum('wallet_transaction_type', ['deposit', 'withdrawal', 'adjustment']);
+export const walletTransactionStatusEnum = pgEnum('wallet_transaction_status', ['pending', 'completed', 'failed']);
+
 // Residential unit subtypes
 export const residentialUnitTypeEnum = pgEnum('residential_unit_type', [
   'apartment', 'studio', 'house', 'condo', 'townhouse', 'duplex', 'room', 'other'
@@ -225,11 +229,48 @@ export const maintenanceRequests = pgTable('maintenance_requests', {
   index('idx_maintenance_requests_submitted_at').on(table.submittedAt),
 ]);
 
+// Landlord Wallets table - tracks collected rent funds
+export const landlordWallets = pgTable('landlord_wallets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  landlordId: uuid('landlord_id').references(() => users.id).notNull().unique(),
+  balance: decimal('balance', { precision: 12, scale: 2 }).default('0').notNull(),
+  totalDeposited: decimal('total_deposited', { precision: 12, scale: 2 }).default('0').notNull(),
+  totalWithdrawn: decimal('total_withdrawn', { precision: 12, scale: 2 }).default('0').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('idx_landlord_wallets_landlord_id').on(table.landlordId),
+]);
+
+// Wallet Transactions table - tracks all wallet activity
+export const walletTransactions = pgTable('wallet_transactions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  walletId: uuid('wallet_id').references(() => landlordWallets.id).notNull(),
+  type: walletTransactionTypeEnum('type').notNull(),
+  amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
+  balanceAfter: decimal('balance_after', { precision: 12, scale: 2 }).notNull(),
+  status: walletTransactionStatusEnum('status').default('pending').notNull(),
+  paymentId: uuid('payment_id').references(() => payments.id),
+  gatewayReference: varchar('gateway_reference', { length: 255 }),
+  destinationType: varchar('destination_type', { length: 50 }), // mobile_money, bank_account
+  destinationDetails: text('destination_details'), // JSON: phone/account number, provider, etc.
+  description: text('description'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('idx_wallet_transactions_wallet_id').on(table.walletId),
+  index('idx_wallet_transactions_type').on(table.type),
+  index('idx_wallet_transactions_status').on(table.status),
+  index('idx_wallet_transactions_payment_id').on(table.paymentId),
+  index('idx_wallet_transactions_created_at').on(table.createdAt),
+]);
+
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
   ownedProperties: many(properties),
   leases: many(leases),
   maintenanceRequests: many(maintenanceRequests),
+  wallet: one(landlordWallets),
 }));
 
 export const propertiesRelations = relations(properties, ({ one, many }) => ({
@@ -318,6 +359,7 @@ export const paymentsRelations = relations(payments, ({ one, many }) => ({
     references: [leases.id],
   }),
   paymentSchedulePayments: many(paymentSchedulePayments),
+  walletTransactions: many(walletTransactions),
 }));
 
 export const paymentSchedulePaymentsRelations = relations(paymentSchedulePayments, ({ one }) => ({
@@ -339,5 +381,24 @@ export const maintenanceRequestsRelations = relations(maintenanceRequests, ({ on
   tenant: one(users, {
     fields: [maintenanceRequests.tenantId],
     references: [users.id],
+  }),
+}));
+
+export const landlordWalletsRelations = relations(landlordWallets, ({ one, many }) => ({
+  landlord: one(users, {
+    fields: [landlordWallets.landlordId],
+    references: [users.id],
+  }),
+  transactions: many(walletTransactions),
+}));
+
+export const walletTransactionsRelations = relations(walletTransactions, ({ one }) => ({
+  wallet: one(landlordWallets, {
+    fields: [walletTransactions.walletId],
+    references: [landlordWallets.id],
+  }),
+  payment: one(payments, {
+    fields: [walletTransactions.paymentId],
+    references: [payments.id],
   }),
 }));

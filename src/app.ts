@@ -15,6 +15,7 @@ import landlordRoutes from './routes/landlords';
 import tenantRoutes from './routes/tenant';
 import amenityRoutes from './routes/amenities';
 import paymentScheduleRoutes from './routes/paymentSchedules';
+import walletRoutes from './routes/wallet';
 import { validateGatewayConfig, getConfiguredGateway } from './gateways';
 import './jobs/worker';
 
@@ -61,6 +62,7 @@ app.use('/api/landlords', landlordRoutes);
 app.use('/api/tenant', tenantRoutes);
 app.use('/api/amenities', amenityRoutes);
 app.use('/api/payment-schedules', paymentScheduleRoutes);
+app.use('/api/wallet', walletRoutes);
 
 // Error handling middleware
 app.use(notFound);
