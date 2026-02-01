@@ -4,7 +4,8 @@
       "Bash(npm run db:generate:*)",
       "Bash(npm run db:setup:*)",
       "Bash(npx tsc:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npm run db:migrate:*)"
     ],
     "deny": [],
     "ask": []

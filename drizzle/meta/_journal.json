@@ -64,6 +64,13 @@
       "when": 1769710167138,
       "tag": "0008_normal_frank_castle",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1769890639744,
+      "tag": "0009_familiar_warpath",
+      "breakpoints": true
     }
   ]
 }

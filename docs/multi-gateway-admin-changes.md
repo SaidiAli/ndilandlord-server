@@ -63,64 +63,12 @@ interface Payment {
 }
 ```
 
-## UI Changes Recommended
-
-### 1. Payment Details View
-
-Display gateway information in payment details:
-
-```jsx
-<div className="payment-details">
-  <p>Gateway: {payment.gateway}</p>
-  <p>Gateway Reference: {payment.gatewayReference}</p>
-  {/* ... other fields */}
-</div>
-```
-
-### 2. Payment List/Table
-
-Consider adding a "Gateway" column to payment tables:
-
-| Date | Amount | Status | Gateway | Tenant |
-|------|--------|--------|---------|--------|
-| ... | 50,000 | Completed | Yo! | John Doe |
-| ... | 75,000 | Pending | IoTec | Jane Doe |
-
-### 3. Payment Analytics
-
-Update analytics to show breakdown by gateway:
-
-```javascript
-// Group payments by gateway
-const paymentsByGateway = payments.reduce((acc, p) => {
-  const gateway = p.gateway || 'iotec';
-  if (!acc[gateway]) {
-    acc[gateway] = { count: 0, amount: 0 };
-  }
-  acc[gateway].count++;
-  acc[gateway].amount += parseFloat(p.amount);
-  return acc;
-}, {});
-```
-
-### 4. Error Messages
-
-Gateway-specific error messages may be returned:
-
-```javascript
-// Handle gateway errors
-if (error.message.includes('Gateway error:')) {
-  // Show user-friendly message
-  showToast('Payment service temporarily unavailable');
-}
-```
-
 ## No Breaking Changes
 
 The API remains backwards compatible:
 - The `transactionId` field is still returned (now using our reference instead of IoTec's)
 - All existing endpoints work the same way
-- Gateway defaults to 'iotec' if not specified
+- Gateway defaults to 'yo' if not specified
 
 ## Migration Notes
 

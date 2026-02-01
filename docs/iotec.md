@@ -1,4 +1,4 @@
-## IoTec 
+## IoTec Pay API Reference
 ioTec is a financial services platform that allows businesses to "make and receive payments, ensure the authenticity of your customers with robust identity verification, effortlessly perform credit checks and submit credit reports to CRBs while staying in constant communication with your customers."
 
 ## Summary of the API
@@ -391,5 +391,504 @@ Response: 200
   ],
   "payer": "0111777771",
   "payerName": "John Doe"
+}
+```
+
+---
+
+## Disbursement
+
+### Initiate Payment Disbursement​#Copy link
+This endpoint withdraws money from your ioTec Pay wallet and transfers it to a recipient's mobile money account or bank account.
+
+```javascript
+
+fetch('https://pay.iotec.io/api/disbursements/disburse', {
+  method: 'POST',
+  headers: {
+    Authorization: 'Bearer <jwt-token>',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    category: 'MobileMoney',
+    currency: 'ITX',
+    walletId: '5e83b187-801e-410e-b76e-f491928547e0',
+    externalId: '001',
+    payeeName: 'John Doe',
+    payeeEmail: 'johndoe@gmail.com',
+    payee: '0111777771',
+    amount: 700,
+    payerNote: 'Payment for Invoice #12345',
+    payeeNote: 'Customer ID: 78923, Order #: ABC123',
+    channel: null,
+    bankId: null,
+    bankIdentificationCode: null,
+    bankTransferType: 'InternalTransfer',
+    sendAt: '2025-05-29T05:55:36.578Z'
+  })
+})
+
+```
+
+
+Response
+
+```json
+
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "createdAt": "2026-01-31T18:11:18.714Z",
+  "category": "MobileMoney",
+  "status": "Pending",
+  "paymentChannel": "Api",
+  "statusCode": "pending",
+  "statusMessage": "Request is being processed",
+  "externalId": "001",
+  "amount": 700,
+  "payerNote": "Payment for Invoice #12345",
+  "payeeNote": "Customer ID: 78923, Order #: ABC123",
+  "currency": "ITX",
+  "wallet": {
+    "id": null,
+    "name": null
+  },
+  "chargeModel": null,
+  "createdBy": "2d629907-d515-4943-84b7-da337292bdba",
+  "createdByData": {
+    "id": null,
+    "name": null
+  },
+  "transactionCharge": 14,
+  "vendorCharge": 10.5,
+  "totalTransactionCharge": 24.5,
+  "vendor": "Mock",
+  "vendorTransactionId": null,
+  "lastUpdated": null,
+  "processedAt": null,
+  "transactions": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "createdAt": "2026-01-31T18:11:18.714Z",
+      "operation": "TopUp",
+      "wallet": {
+        "id": null,
+        "name": null
+      },
+      "walletId": "123e4567-e89b-12d3-a456-426614174000",
+      "requestId": "123e4567-e89b-12d3-a456-426614174000",
+      "requestCategory": "Disbursement",
+      "transactionNumber": 1,
+      "amount": 1,
+      "memo": null,
+      "narration": null,
+      "balance": 1,
+      "previousBalance": 1,
+      "rollback": true,
+      "category": "Disbursement",
+      "disbursement": {
+        "id": "123e4567-e89b-12d3-a456-426614174000",
+        "createdAt": "2026-01-31T18:11:18.714Z",
+        "lastUpdated": null,
+        "isDeleted": true,
+        "status": "Pending",
+        "vendor": "Mock",
+        "amount": 1,
+        "msisdn": null,
+        "vendorTransactionId": null,
+        "transactionCharge": 1,
+        "vendorCharge": 1
+      },
+      "collection": {
+        "id": "123e4567-e89b-12d3-a456-426614174000",
+        "createdAt": "2026-01-31T18:11:18.714Z",
+        "lastUpdated": null,
+        "isDeleted": true,
+        "status": "Pending",
+        "vendor": "Mock",
+        "amount": 1,
+        "msisdn": null,
+        "vendorTransactionId": null,
+        "transactionCharge": 1,
+        "vendorCharge": 1
+      }
+    }
+  ],
+  "payee": "0111777771",
+  "payeeName": "JOHN DOE",
+  "payeeUploadName": "John Doe",
+  "nameStatus": "Pending",
+  "bulkId": "5e83b187-801e-410e-b76e-f491928547e0",
+  "internalRequestId": null,
+  "bankId": "5e83b187-801e-410e-b76e-f491928547e0",
+  "bank": {
+    "id": "123e4567-e89b-12d3-a456-426614174000",
+    "createdAt": "2026-01-31T18:11:18.714Z",
+    "createdBy": null,
+    "name": "Stanbic Bank",
+    "bankIdentificationCode": "ABCDUGKAXXX",
+    "stanbicIdentificationCode": null,
+    "mainBranchCode": null,
+    "mainBranchName": "Stanbic Main Branch",
+    "accountNumberRegex": null
+  },
+  "bankTransferType": "InternalTransfer",
+  "approvalDecision": true,
+  "decisionMadeBy": "5e83b187-801e-410e-b76e-f491928547e0",
+  "decisionMadeByData": {
+    "id": null,
+    "name": null
+  },
+  "decisionMadeAt": "2025-05-29T05:55:36.578Z",
+  "decisionRemarks": "Approved after verifying recipient details with client.",
+  "sendAt": "2025-05-29T05:55:36.578Z",
+  "decisions": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "createdAt": "2026-01-31T18:11:18.714Z",
+      "category": "Approve",
+      "disbursementId": "123e4567-e89b-12d3-a456-426614174000",
+      "createdBy": null,
+      "role": null,
+      "decisionMadeBy": null,
+      "decisionMadeAt": null,
+      "decisionRemarks": null
+    }
+  ]
+}
+
+```
+
+Error response 
+
+```
+{
+  "message": "Invalid ioTec wallet",
+  "code": "BadRequest"
+}
+```
+
+### Transfer funds to bank account​#Copy link
+This endpoint withdraws money from your ioTec Pay wallet and transfers it to a recipient's bank account.
+
+```javascript
+
+fetch('https://pay.iotec.io/api/disbursements/bank-disburse', {
+  method: 'POST',
+  headers: {
+    Authorization: 'Bearer <jwt-token>',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    bankId: '5e83b187-801e-410e-b76e-f491928547e0',
+    bankIdentificationCode: 'ABCDUGKAXXX',
+    transferType: 'InternalTransfer',
+    currency: 'ITX',
+    walletId: '5e83b187-801e-410e-b76e-f491928547e0',
+    externalId: '001',
+    accountName: 'John Doe',
+    accountNumber: '1234567890',
+    amount: 700,
+    payeeNote: 'Customer ID: 78923, Order #: ABC123',
+    channel: null,
+    sendAt: '2025-05-29T05:55:36.578Z'
+  })
+})
+
+```
+
+Response
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "createdAt": "2026-01-31T18:11:18.714Z",
+  "category": "MobileMoney",
+  "status": "Pending",
+  "paymentChannel": "Api",
+  "statusCode": "pending",
+  "statusMessage": "Request is being processed",
+  "externalId": "001",
+  "amount": 700,
+  "payerNote": "Payment for Invoice #12345",
+  "payeeNote": "Customer ID: 78923, Order #: ABC123",
+  "currency": "ITX",
+  "wallet": {
+    "id": null,
+    "name": null
+  },
+  "chargeModel": null,
+  "createdBy": "2d629907-d515-4943-84b7-da337292bdba",
+  "createdByData": {
+    "id": null,
+    "name": null
+  },
+  "transactionCharge": 14,
+  "vendorCharge": 10.5,
+  "totalTransactionCharge": 24.5,
+  "vendor": "Mock",
+  "vendorTransactionId": null,
+  "lastUpdated": null,
+  "processedAt": null,
+  "transactions": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "createdAt": "2026-01-31T18:11:18.714Z",
+      "operation": "TopUp",
+      "wallet": {
+        "id": null,
+        "name": null
+      },
+      "walletId": "123e4567-e89b-12d3-a456-426614174000",
+      "requestId": "123e4567-e89b-12d3-a456-426614174000",
+      "requestCategory": "Disbursement",
+      "transactionNumber": 1,
+      "amount": 1,
+      "memo": null,
+      "narration": null,
+      "balance": 1,
+      "previousBalance": 1,
+      "rollback": true,
+      "category": "Disbursement",
+      "disbursement": {
+        "id": "123e4567-e89b-12d3-a456-426614174000",
+        "createdAt": "2026-01-31T18:11:18.714Z",
+        "lastUpdated": null,
+        "isDeleted": true,
+        "status": "Pending",
+        "vendor": "Mock",
+        "amount": 1,
+        "msisdn": null,
+        "vendorTransactionId": null,
+        "transactionCharge": 1,
+        "vendorCharge": 1
+      },
+      "collection": {
+        "id": "123e4567-e89b-12d3-a456-426614174000",
+        "createdAt": "2026-01-31T18:11:18.714Z",
+        "lastUpdated": null,
+        "isDeleted": true,
+        "status": "Pending",
+        "vendor": "Mock",
+        "amount": 1,
+        "msisdn": null,
+        "vendorTransactionId": null,
+        "transactionCharge": 1,
+        "vendorCharge": 1
+      }
+    }
+  ],
+  "payee": "0111777771",
+  "payeeName": "JOHN DOE",
+  "payeeUploadName": "John Doe",
+  "nameStatus": "Pending",
+  "bulkId": "5e83b187-801e-410e-b76e-f491928547e0",
+  "internalRequestId": null,
+  "bankId": "5e83b187-801e-410e-b76e-f491928547e0",
+  "bank": {
+    "id": "123e4567-e89b-12d3-a456-426614174000",
+    "createdAt": "2026-01-31T18:11:18.714Z",
+    "createdBy": null,
+    "name": "Stanbic Bank",
+    "bankIdentificationCode": "ABCDUGKAXXX",
+    "stanbicIdentificationCode": null,
+    "mainBranchCode": null,
+    "mainBranchName": "Stanbic Main Branch",
+    "accountNumberRegex": null
+  },
+  "bankTransferType": "InternalTransfer",
+  "approvalDecision": true,
+  "decisionMadeBy": "5e83b187-801e-410e-b76e-f491928547e0",
+  "decisionMadeByData": {
+    "id": null,
+    "name": null
+  },
+  "decisionMadeAt": "2025-05-29T05:55:36.578Z",
+  "decisionRemarks": "Approved after verifying recipient details with client.",
+  "sendAt": "2025-05-29T05:55:36.578Z",
+  "decisions": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174000",
+      "createdAt": "2026-01-31T18:11:18.714Z",
+      "category": "Approve",
+      "disbursementId": "123e4567-e89b-12d3-a456-426614174000",
+      "createdBy": null,
+      "role": null,
+      "decisionMadeBy": null,
+      "decisionMadeAt": null,
+      "decisionRemarks": null
+    }
+  ]
+}
+```
+
+### Get transaction status​#Copy link
+This endpoint is used to get the details of a disbursement transaction including the status.
+
+```javascript
+fetch('https://pay.iotec.io/api/disbursements/status/', {
+  headers: {
+    Authorization: 'Bearer <jwt-token>'
+  }
+})
+```
+
+200 Response 
+
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "createdAt": "2026-01-31T18:11:18.714Z",
+  "category": "MobileMoney",
+  "status": "Pending",
+  "paymentChannel": "Api",
+  "statusCode": "pending",
+  "statusMessage": "Request is being processed",
+  "externalId": "001",
+  "amount": 700,
+  "payerNote": "Payment for Invoice #12345",
+  "payeeNote": "Customer ID: 78923, Order #: ABC123",
+  "currency": "ITX",
+  "wallet": {
+    "id": null,
+    "name": null
+  },
+  "chargeModel": null,
+  "createdBy": "2d629907-d515-4943-84b7-da337292bdba",
+  "createdByData": {
+    "id": null,
+    "name": null
+  },
+  "transactionCharge": 14,
+  "vendorCharge": 10.5,
+  "totalTransactionCharge": 24.5,
+  "vendor": "Mock",
+  "vendorTransactionId": null,
+  "lastUpdated": null,
+  "processedAt": null,
+  "payee": "0111777771",
+  "payeeName": "JOHN DOE",
+  "payeeUploadName": "John Doe",
+  "nameStatus": "Pending",
+  "bulkId": "5e83b187-801e-410e-b76e-f491928547e0",
+  "internalRequestId": null,
+  "bankId": "5e83b187-801e-410e-b76e-f491928547e0",
+  "bank": {
+    "id": "123e4567-e89b-12d3-a456-426614174000",
+    "createdAt": "2026-01-31T18:11:18.714Z",
+    "createdBy": null,
+    "name": "Stanbic Bank",
+    "bankIdentificationCode": "ABCDUGKAXXX",
+    "stanbicIdentificationCode": null,
+    "mainBranchCode": null,
+    "mainBranchName": "Stanbic Main Branch",
+    "accountNumberRegex": null
+  },
+  "bankTransferType": "InternalTransfer",
+  "approvalDecision": true,
+  "decisionMadeBy": "5e83b187-801e-410e-b76e-f491928547e0",
+  "decisionMadeByData": {
+    "id": null,
+    "name": null
+  },
+  "decisionMadeAt": "2025-05-29T05:55:36.578Z",
+  "decisionRemarks": "Approved after verifying recipient details with client.",
+  "sendAt": "2025-05-29T05:55:36.578Z"
+}
+```
+
+### Get transaction status by externalId​#Copy link
+This endpoint is used to get the details of a disbursement transaction including the status with the use of your own reference ID (externalId).
+
+```javascript
+fetch('https://pay.iotec.io/api/disbursements/external-id/', {
+  headers: {
+    Authorization: 'Bearer <jwt-token>'
+  }
+})
+```
+
+200 response
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "createdAt": "2026-01-31T18:11:18.714Z",
+  "category": "MobileMoney",
+  "status": "Pending",
+  "paymentChannel": "Api",
+  "statusCode": "pending",
+  "statusMessage": "Request is being processed",
+  "externalId": "001",
+  "amount": 700,
+  "payerNote": "Payment for Invoice #12345",
+  "payeeNote": "Customer ID: 78923, Order #: ABC123",
+  "currency": "ITX",
+  "wallet": {
+    "id": null,
+    "name": null
+  },
+  "chargeModel": null,
+  "createdBy": "2d629907-d515-4943-84b7-da337292bdba",
+  "createdByData": {
+    "id": null,
+    "name": null
+  },
+  "transactionCharge": 14,
+  "vendorCharge": 10.5,
+  "totalTransactionCharge": 24.5,
+  "vendor": "Mock",
+  "vendorTransactionId": null,
+  "lastUpdated": null,
+  "processedAt": null,
+  "payee": "0111777771",
+  "payeeName": "JOHN DOE",
+  "payeeUploadName": "John Doe",
+  "nameStatus": "Pending",
+  "bulkId": "5e83b187-801e-410e-b76e-f491928547e0",
+  "internalRequestId": null,
+  "bankId": "5e83b187-801e-410e-b76e-f491928547e0",
+  "bank": {
+    "id": "123e4567-e89b-12d3-a456-426614174000",
+    "createdAt": "2026-01-31T18:11:18.714Z",
+    "createdBy": null,
+    "name": "Stanbic Bank",
+    "bankIdentificationCode": "ABCDUGKAXXX",
+    "stanbicIdentificationCode": null,
+    "mainBranchCode": null,
+    "mainBranchName": "Stanbic Main Branch",
+    "accountNumberRegex": null
+  },
+  "bankTransferType": "InternalTransfer",
+  "approvalDecision": true,
+  "decisionMadeBy": "5e83b187-801e-410e-b76e-f491928547e0",
+  "decisionMadeByData": {
+    "id": null,
+    "name": null
+  },
+  "decisionMadeAt": "2025-05-29T05:55:36.578Z",
+  "decisionRemarks": "Approved after verifying recipient details with client.",
+  "sendAt": "2025-05-29T05:55:36.578Z"
+}
+```
+
+### Overrides the default payout schedule and pays out immediately.
+
+```javascript
+fetch('https://pay.iotec.io/api/disbursements/override-schedule', {
+  method: 'POST',
+  headers: {
+    Authorization: 'Bearer <jwt-token>',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    disbursementId: '5e83b187-801e-410e-b76e-f491928547e0',
+    decision: true,
+    remarks: 'Approved after verifying recipient details with client.'
+  })
+})
+```
+
+200 response
+```json
+{
+  "statusCode": 1
 }
 ```
