@@ -5,6 +5,10 @@ import { config } from '../domain/config';
 
 const connectionString = config.database.url;
 
+if (!connectionString) {
+    throw new Error('Database URL is not configured');
+}
+
 // Disable prefetch as it's not supported for transactions
 const client = postgres(connectionString, { prepare: false });
 

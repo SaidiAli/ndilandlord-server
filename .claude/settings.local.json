@@ -5,7 +5,8 @@
       "Bash(npm run db:setup:*)",
       "Bash(npx tsc:*)",
       "Bash(npm install:*)",
-      "Bash(npm run db:migrate:*)"
+      "Bash(npm run db:migrate:*)",
+      "Bash(npx eslint:*)"
     ],
     "deny": [],
     "ask": []

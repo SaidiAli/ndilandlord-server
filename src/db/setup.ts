@@ -16,10 +16,14 @@ dotenv.config();
 
 const connectionString = config.database.url;
 
-const setupDatabase = async (options: { seed?: boolean; indexes?: boolean } = {}) => {
-  const { seed = false, indexes = true } = options;
+const setupDatabase = async (options: { indexes?: boolean } = {}) => {
+  const { indexes = true } = options;
 
   console.log('🚀 Starting database setup...');
+
+  if (!connectionString) {
+    throw new Error('Database URL is not configured');
+  }
 
   const migrationClient = postgres(connectionString, { max: 1 });
   const db = drizzle(migrationClient);
@@ -61,14 +65,6 @@ const setupDatabase = async (options: { seed?: boolean; indexes?: boolean } = {}
       } else {
         console.log('⚠️  Indexes file not found, skipping...');
       }
-    }
-
-    // Step 3: Seed data if requested
-    if (seed) {
-      console.log('🌱 Seeding database...');
-      // const { seedData } = await import('./seed');
-      // await seedData();
-      console.log('✅ Database seeded successfully');
     }
 
     // Step 4: Verify setup
@@ -152,6 +148,10 @@ const verifyDatabaseSetup = async (client: postgres.Sql) => {
 const resetDatabase = async () => {
   console.log('⚠️  Resetting database...');
 
+  if (!connectionString) {
+    throw new Error('Database URL is not configured');
+  }
+
   const migrationClient = postgres(connectionString, { max: 1 });
 
   try {
@@ -187,18 +187,11 @@ const main = async () => {
   try {
     switch (command) {
       case 'setup':
-        await setupDatabase({
-          seed: args.includes('--seed'),
-          indexes: !args.includes('--no-indexes')
-        });
-        break;
-
-      case 'seed':
-        await setupDatabase({ seed: true, indexes: false });
+        await setupDatabase({ indexes: !args.includes('--no-indexes') });
         break;
 
       case 'indexes':
-        await setupDatabase({ seed: false, indexes: true });
+        await setupDatabase({ indexes: true });
         break;
 
       case 'reset':
@@ -207,14 +200,13 @@ const main = async () => {
 
       case 'full':
         await resetDatabase();
-        await setupDatabase({ seed: true, indexes: true });
+        await setupDatabase({ indexes: true });
         break;
 
       default:
         console.log('Usage: tsx src/db/setup.ts <command>');
         console.log('Commands:');
-        console.log('  setup [--seed] [--no-indexes] - Run migrations and setup');
-        console.log('  seed                          - Run seeding only');
+        console.log('  setup [--no-indexes] - Run migrations and setup');
         console.log('  indexes                       - Apply indexes only');
         console.log('  reset                         - Reset database (drop all tables)');
         console.log('  full                          - Full reset and setup with seed data');

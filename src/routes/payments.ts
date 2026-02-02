@@ -14,9 +14,8 @@ import { PaymentScheduleService } from '../services/paymentScheduleService';
 import {
   getPaymentGateway,
   getGatewayByName,
-  getConfiguredGateway,
-  GatewayError,
   TransactionStatus,
+  GatewayError,
 } from '../gateways';
 import type { IpnPayload, FailurePayload } from '../gateways/yo';
 
@@ -387,15 +386,10 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
       });
     }
 
-    const { leaseId, amount, phoneNumber, provider, scheduleId } = validationResult.data;
+    const { leaseId, amount, phoneNumber, provider } = validationResult.data;
 
-    // Validate against a specific schedule if scheduleId is provided
-    let validation;
-    if (scheduleId) {
-      validation = await PaymentService.validatePaymentWithSchedule(leaseId, scheduleId, amount);
-    } else {
-      validation = await PaymentService.validatePayment(leaseId, amount);
-    }
+    // Validate payment amount
+    const validation = await PaymentService.validatePayment(leaseId, amount);
 
     if (!validation.isValid) {
       return res.status(400).json({
@@ -441,7 +435,6 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
       gateway: gatewayName,
       gatewayReference: depositResult.gatewayReference,
       leaseId,
-      scheduleId,
       statusMessage: depositResult.message,
     };
 
@@ -468,9 +461,10 @@ router.post('/initiate', authenticate, async (req: AuthenticatedRequest, res: Re
 });
 
 // Manual Payment Registration (Landlord Only)
+// Payments are auto-distributed to schedules. No wallet credit (money already received outside system).
 router.post('/register', authenticate, authorize('landlord'), async (req: AuthenticatedRequest, res: Response<ApiResponse>) => {
   try {
-    const { leaseId, amount, paidDate, paymentMethod, notes, scheduleId } = req.body;
+    const { leaseId, amount, paidDate, paymentMethod, notes } = req.body;
 
     // Basic Validation
     if (!leaseId || !amount || !paidDate || !paymentMethod) {
@@ -495,7 +489,6 @@ router.post('/register', authenticate, authorize('landlord'), async (req: Authen
       paidDate: new Date(paidDate),
       paymentMethod,
       notes,
-      scheduleId,
     });
 
     res.json({

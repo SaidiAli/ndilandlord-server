@@ -25,7 +25,6 @@ export interface PaymentInitiation {
   gateway: 'iotec' | 'yo';
   gatewayReference: string;
   leaseId: string;
-  scheduleId?: string;
   statusMessage?: string;
 }
 
@@ -43,7 +42,6 @@ export const paymentAmountSchema = z.object({
 
 export const paymentInitiationSchema = z.object({
   leaseId: z.string().uuid('Invalid lease ID'),
-  scheduleId: z.string().uuid('Invalid schedule ID').optional(),
   amount: z.number(),
   paymentMethod: z.string().optional().default('mobile_money'),
   provider: z.enum(['mtn', 'airtel', 'm-sente']),
@@ -232,8 +230,8 @@ export class PaymentService {
               paymentNumber: appliedSchedules[0]?.paymentNumber || null,
               periodCovered: appliedSchedules.length > 0
                 ? appliedSchedules.map(s =>
-                    `${new Date(s.periodStart).toLocaleDateString()} - ${new Date(s.periodEnd).toLocaleDateString()}`
-                  ).join(', ')
+                  `${new Date(s.periodStart).toLocaleDateString()} - ${new Date(s.periodEnd).toLocaleDateString()}`
+                ).join(', ')
                 : null,
               appliedSchedules: appliedSchedules.map(s => ({
                 scheduleId: s.scheduleId,
@@ -271,67 +269,6 @@ export class PaymentService {
     } catch (error) {
       console.error('Error fetching payment history:', error);
       throw new Error('Failed to fetch payment history');
-    }
-  }
-
-  /**
- * Validate payment against schedule
- */
-  static async validatePaymentWithSchedule(
-    leaseId: string,
-    scheduleId: string,
-    amount: number
-  ): Promise<PaymentValidation> {
-    try {
-      // Get the schedule entry
-      const [schedule] = await db
-        .select()
-        .from(paymentSchedules)
-        .where(
-          and(
-            eq(paymentSchedules.id, scheduleId),
-            eq(paymentSchedules.leaseId, leaseId)
-          )
-        )
-        .limit(1);
-
-      if (!schedule) {
-        return {
-          isValid: false,
-          errors: ['Invalid payment schedule'],
-        };
-      }
-
-      if (schedule.isPaid) {
-        return {
-          isValid: false,
-          errors: ['This payment has already been made'],
-        };
-      }
-
-      const scheduledAmount = parseFloat(schedule.amount);
-      const errors: string[] = [];
-
-      // Allow exact amount or overpayment (credit)
-      if (amount < scheduledAmount) {
-        errors.push(`Amount must be at least UGX ${scheduledAmount.toLocaleString()}`);
-        return {
-          isValid: false,
-          errors,
-          suggestedAmount: scheduledAmount,
-        };
-      }
-
-      return {
-        isValid: true,
-        errors: [],
-      };
-    } catch (error) {
-      console.error('Error validating payment:', error);
-      return {
-        isValid: false,
-        errors: ['Failed to validate payment'],
-      };
     }
   }
 
@@ -452,6 +389,8 @@ export class PaymentService {
 
   /**
    * Register a manual payment (e.g. cash, bank transfer)
+   * Manual payments are auto-distributed to schedules but do NOT credit the landlord wallet
+   * (the money was already received outside the system)
    */
   static async registerManualPayment(data: {
     leaseId: string;
@@ -459,64 +398,30 @@ export class PaymentService {
     paidDate: Date;
     paymentMethod: string;
     notes?: string;
-    scheduleId?: string;
     transactionId?: string;
   }) {
     try {
       // Create transaction ID if not provided (for manual payments)
       const transactionId = data.transactionId || `MAN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-      if (data.scheduleId) {
-        // CASE 1: Specific Schedule Selected
-        // Create the payment record
-        const [payment] = await db
-          .insert(payments)
-          .values({
-            leaseId: data.leaseId,
-            amount: data.amount.toString(),
-            transactionId: transactionId,
-            paymentMethod: data.paymentMethod,
-            status: 'completed',
-            paidDate: data.paidDate,
-            notes: data.notes
-          })
-          .returning();
+      // Create the payment record
+      const [payment] = await db
+        .insert(payments)
+        .values({
+          leaseId: data.leaseId,
+          amount: data.amount.toString(),
+          transactionId: transactionId,
+          paymentMethod: data.paymentMethod,
+          status: 'completed',
+          paidDate: data.paidDate,
+          notes: data.notes
+        })
+        .returning();
 
-        // Check if this schedule is now fully paid
-        const schedule = await db.select().from(paymentSchedules).where(eq(paymentSchedules.id, data.scheduleId)).limit(1);
-        if (schedule.length > 0) {
-          // Get existing payments from junction table
-          const existingPaymentsResult = await db
-            .select({ total: sum(paymentSchedulePayments.amountApplied) })
-            .from(paymentSchedulePayments)
-            .where(eq(paymentSchedulePayments.scheduleId, data.scheduleId));
+      // Distribute payment to schedules (no wallet credit for manual payments)
+      await this.applyPaymentToSchedules(payment);
 
-          const alreadyPaid = parseFloat(existingPaymentsResult[0]?.total || '0');
-          const scheduleAmount = parseFloat(schedule[0].amount);
-          const remainingDue = scheduleAmount - alreadyPaid;
-
-          // Apply payment to schedule (full or partial)
-          const amountToApply = Math.min(data.amount, remainingDue);
-          await PaymentScheduleService.linkPaymentToSchedule(payment.id, data.scheduleId, amountToApply);
-        }
-
-        // Credit landlord wallet for manual payment
-        await this.creditLandlordWallet(payment);
-
-        return payment;
-      } else {
-        // CASE 2: No Specific Schedule (Auto-Distribute / Cascading)
-        const createdPayments = await this.distributePaymentToSchedules(
-          data.leaseId,
-          data.amount,
-          transactionId,
-          data.paymentMethod,
-          data.paidDate,
-          data.notes
-        );
-
-        return createdPayments[0];
-      }
+      return payment;
     } catch (error) {
       console.error('Error registering manual payment:', error);
       throw new Error('Failed to register manual payment');
@@ -525,6 +430,8 @@ export class PaymentService {
 
   /**
    * Update payment status
+   * For mobile money payments, this is called when the webhook confirms completion.
+   * Mobile money payments DO credit the landlord wallet (money flows through the system).
    */
   static async updatePaymentStatus(
     paymentId: string,
@@ -544,9 +451,10 @@ export class PaymentService {
       }
 
       if (status === 'completed') {
-        await this.autoMatchPaymentToSchedule(updatedPayment);
+        // Distribute payment to schedules
+        await this.applyPaymentToSchedules(updatedPayment);
 
-        // Credit the landlord's wallet
+        // Credit the landlord's wallet (only for mobile money payments that flow through the system)
         await this.creditLandlordWallet(updatedPayment);
       }
 
@@ -583,44 +491,81 @@ export class PaymentService {
   }
 
   /**
-   * Auto-match payment to oldest unpaid schedule
+   * Apply a completed payment to unpaid/partially paid schedules (cascading distribution)
+   * This method distributes the payment amount across schedules, oldest first.
+   * Does NOT handle wallet crediting - that's the caller's responsibility.
    */
-  private static async autoMatchPaymentToSchedule(payment: any) {
+  private static async applyPaymentToSchedules(payment: any) {
     try {
-      // Find oldest unpaid schedule for this lease
-      const [oldestUnpaid] = await db
+      const amount = parseFloat(payment.amount);
+      const leaseId = payment.leaseId;
+
+      // Get all schedules for this lease ordered by payment number
+      const allSchedules = await db
         .select()
         .from(paymentSchedules)
-        .where(
-          and(
-            eq(paymentSchedules.leaseId, payment.leaseId),
-            eq(paymentSchedules.isPaid, false)
-          )
-        )
-        .orderBy(asc(paymentSchedules.paymentNumber))
-        .limit(1);
+        .where(eq(paymentSchedules.leaseId, leaseId))
+        .orderBy(asc(paymentSchedules.paymentNumber));
 
-      if (oldestUnpaid) {
-        // Mark schedule as paid if sufficient amount
-        const paymentVal = parseFloat(payment.amount);
-        const scheduleVal = parseFloat(oldestUnpaid.amount);
+      let remainingAmount = amount;
 
-        // Check if fully paid (or close enough)
-        if (paymentVal >= scheduleVal - 0.01) {
-          await PaymentScheduleService.linkPaymentToSchedule(
-            payment.id,
-            oldestUnpaid.id
-          );
+      // Iterate through schedules and apply payment
+      for (const schedule of allSchedules) {
+        if (remainingAmount <= 0.01) break;
+
+        const scheduleAmount = parseFloat(schedule.amount);
+
+        // Calculate how much of this schedule has already been paid (from junction table)
+        const existingPaymentsResult = await db
+          .select({ total: sum(paymentSchedulePayments.amountApplied) })
+          .from(paymentSchedulePayments)
+          .where(eq(paymentSchedulePayments.scheduleId, schedule.id));
+
+        const alreadyPaid = parseFloat(existingPaymentsResult[0]?.total || '0');
+        const remainingDue = scheduleAmount - alreadyPaid;
+
+        if (remainingDue <= 0.01) continue; // Skip if fully paid (floating point tolerance)
+
+        // Determine allocation for this schedule
+        const allocation = Math.min(remainingAmount, remainingDue);
+
+        // Insert junction record
+        await db.insert(paymentSchedulePayments).values({
+          paymentId: payment.id,
+          scheduleId: schedule.id,
+          amountApplied: allocation.toString(),
+        });
+
+        remainingAmount -= allocation;
+
+        // Update isPaid flag if fully paid
+        const newTotal = alreadyPaid + allocation;
+        if (newTotal >= scheduleAmount - 0.01) {
+          await db
+            .update(paymentSchedules)
+            .set({
+              isPaid: true,
+              updatedAt: new Date(),
+            })
+            .where(eq(paymentSchedules.id, schedule.id));
         }
       }
+
+      // Handle Overpayment (Credit) - payment remains but not applied to any schedule yet
+      // This credit will be applied to future schedules automatically
+      if (remainingAmount > 0.01) {
+        console.log(`Payment ${payment.id} has ${remainingAmount} in credit for future schedules`);
+      }
     } catch (error) {
-      console.error('Error auto-matching payment to schedule:', error);
-      // Don't throw - this is a best-effort operation
+      console.error('Error applying payment to schedules:', error);
+      // Don't throw - this is a best-effort operation for distribution
     }
   }
 
   /**
    * Distribute payment amount to schedules (Upfront/Partial logic)
+   * Used internally for creating and distributing a new payment in one operation.
+   * @deprecated Use registerManualPayment or the applyPaymentToSchedules helper instead
    */
   private static async distributePaymentToSchedules(
     leaseId: string,
@@ -709,8 +654,8 @@ export class PaymentService {
         console.log(`Payment ${payment.id} has ${remainingAmount} in credit for future schedules`);
       }
 
-      // Credit landlord wallet for distributed payment
-      await this.creditLandlordWallet(payment);
+      // Note: Wallet crediting is NOT done here - it's the caller's responsibility
+      // This method is deprecated; use applyPaymentToSchedules instead
 
       return [payment];
     } catch (error) {
