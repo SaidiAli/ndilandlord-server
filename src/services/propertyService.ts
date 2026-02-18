@@ -35,7 +35,7 @@ export interface PropertyDashboardData {
     occupiedUnits: number;
     availableUnits: number;
     monthlyRevenue: number;
-    occupancyRate: number;
+    occupancyRate?: number;
   };
   recentActivity: {
     newLeases: number;
@@ -221,7 +221,6 @@ export class PropertyService {
       const monthlyRevenue = propertyUnits
         .filter(u => u.lease?.id)
         .reduce((sum, u) => sum + parseFloat(u.lease?.monthlyRent || '0'), 0);
-      const occupancyRate = totalUnits > 0 ? (occupiedUnits / totalUnits) * 100 : 0;
 
       // Get recent activity (last 30 days)
       const thirtyDaysAgo = new Date();
@@ -250,8 +249,7 @@ export class PropertyService {
           totalUnits,
           occupiedUnits,
           availableUnits,
-          monthlyRevenue,
-          occupancyRate: Math.round(occupancyRate * 100) / 100,
+          monthlyRevenue
         },
         recentActivity: {
           newLeases,
